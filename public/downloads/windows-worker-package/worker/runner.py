@@ -2,22 +2,10 @@ from __future__ import annotations
 
 import time
 
+from worker.automation import inspect_runtime, reposition_windows, start_missing_processes
 from worker.client import ControlCenterClient
 from worker.config import WorkerConfig, load_worker_config, merge_worker_config, resolve_worker_config_path, save_worker_config
 from worker.state_machine import RuntimeSignal, WorkerState, next_state
-
-
-def detect_runtime_signal() -> RuntimeSignal:
-    """
-    Gercek implementasyonda bu alan internet kontrolu, pywinauto ile login ekrani tespiti
-    ve gerekirse OCR ile yedek goruntu eslesmesi kullanacak.
-    """
-    return RuntimeSignal(
-        internet_reachable=True,
-        logout_detected=False,
-        login_screen_visible=False,
-        positioning_required=False,
-    )
 
 
 def sync_remote_config(client: ControlCenterClient, config: WorkerConfig, config_path: str | None = None) -> WorkerConfig:
@@ -38,15 +26,37 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
         except Exception:
             pass
 
-        signal = detect_runtime_signal()
+        inspection = inspect_runtime(config)
+        if inspection.internet_reachable and inspection.process_count < config.window_count:
+            launched = start_missing_processes(config, inspection.process_count)
+            if launched > 0:
+                client.send_event(
+                    config.device_id,
+                    "info",
+                    "process_started",
+                    f"{launched} eksik pencere icin yeni EXE sureci baslatildi.",
+                )
+                inspection = inspect_runtime(config)
+
+        if inspection.internet_reachable and inspection.active_windows > 0:
+            positioned = reposition_windows(config.exe_path, min(config.window_count, inspection.active_windows))
+            if positioned:
+                inspection.positioning_required = positioned != config.window_count
+
+        signal = RuntimeSignal(
+            internet_reachable=inspection.internet_reachable,
+            logout_detected=inspection.logout_detected,
+            login_screen_visible=inspection.login_screen_visible,
+            positioning_required=inspection.positioning_required,
+        )
         state = next_state(state, signal)
 
         client.send_heartbeat(
             device_id=config.device_id,
             automation_state=state.value,
-            active_windows=config.window_count,
+            active_windows=inspection.active_windows,
             internet_reachable=signal.internet_reachable,
-            last_error=None if signal.internet_reachable else "Internet yok",
+            last_error=inspection.last_error if signal.internet_reachable else "Internet yok",
         )
 
         if state == WorkerState.RELAUNCHING:

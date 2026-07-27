@@ -34,7 +34,10 @@ def next_state(current: WorkerState, signal: RuntimeSignal) -> WorkerState:
     if current == WorkerState.LOGGING_IN and signal.positioning_required:
         return WorkerState.POSITIONING
 
-    if current == WorkerState.POSITIONING and not signal.positioning_required:
+    if signal.positioning_required:
+        return WorkerState.POSITIONING
+
+    if current in {WorkerState.POSITIONING, WorkerState.CHECKING, WorkerState.LOGGING_IN, WorkerState.RELAUNCHING}:
         return WorkerState.IDLE
 
     return current if current != WorkerState.ERROR else WorkerState.CHECKING

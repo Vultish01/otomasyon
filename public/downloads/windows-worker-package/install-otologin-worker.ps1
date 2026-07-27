@@ -119,8 +119,10 @@ $machineKey = Get-OrCreateMachineKey -IdentityPath $identityPath
 $computerName = $env:COMPUTERNAME
 $osCaption = (Get-CimInstance Win32_OperatingSystem).Caption
 
-$apiBaseUrl = Read-ValueOrDefault -Prompt "API adresi" -DefaultValue $config.api_base_url
-$apiBaseUrl = $apiBaseUrl.TrimEnd("/")
+$apiBaseUrl = "$($config.api_base_url)".TrimEnd("/")
+if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) {
+    throw "Kurulum paketinde API adresi yok. Lutfen guncel worker paketini tekrar indirin."
+}
 $exePath = Read-ValueOrDefault -Prompt "Bu bilgisayardaki EXE yolu" -DefaultValue $config.exe_path
 $windowCount = [int](Read-ValueOrDefault -Prompt "Baslangic pencere sayisi" -DefaultValue "$($config.window_count)")
 $healthCheck = [int](Read-ValueOrDefault -Prompt "Kontrol araligi (sn)" -DefaultValue "$($config.health_check_interval_sec)")

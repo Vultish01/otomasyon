@@ -57,7 +57,7 @@ Windows tarafinda hedef akis:
 1. Panelden `otologin-windows-worker.zip` dosyasini indir.
 2. ZIP'i cikar.
 3. `install-otologin-worker.bat` dosyasini calistir.
-4. Kurulum sirasinda API adresini ve bu bilgisayardaki EXE yolunu gir.
+4. Kurulum paketi API adresini otomatik kullanir; sadece bu bilgisayardaki EXE yolunu gir.
 5. Script cihaz adini ve Windows surumunu otomatik okuyup web API'ye gonderir.
 6. API kaydi tamamlaninca `worker-config.json` otomatik yazilir ve worker baslatilir.
 

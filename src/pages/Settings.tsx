@@ -28,7 +28,7 @@ const securityItems = [
 const setupSteps = [
   "Windows makineden paneldeki ZIP paketini indir.",
   "ZIP'i cikartip icindeki install-otologin-worker.bat dosyasini calistir.",
-  "API adresini ve bu bilgisayardaki EXE yolunu gir.",
+  "Kurulum paketi API adresini otomatik kullanir; sadece EXE yolunu ve temel ayarlari gir.",
   "Script cihazi panele otomatik kaydeder ve worker-config.json dosyasini doldurur.",
   "Kurulum bitince worker otomatik baslar; sonraki ayarlari panelden yonetirsin.",
 ];

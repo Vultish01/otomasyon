@@ -29,3 +29,13 @@ def test_positioning_completion_returns_idle():
         positioning_required=False,
     )
     assert next_state(WorkerState.POSITIONING, signal) == WorkerState.IDLE
+
+
+def test_positioning_need_moves_idle_to_positioning():
+    signal = RuntimeSignal(
+        internet_reachable=True,
+        logout_detected=False,
+        login_screen_visible=False,
+        positioning_required=True,
+    )
+    assert next_state(WorkerState.IDLE, signal) == WorkerState.POSITIONING

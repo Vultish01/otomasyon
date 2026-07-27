@@ -2,7 +2,7 @@ OtoLogin Windows Worker Kurulumu
 
 1. Bu klasoru zip icinden cikarin.
 2. install-otologin-worker.bat dosyasina cift tiklayin.
-3. Kurulum sirasi geldiginde API adresini ve bu bilgisayardaki EXE yolunu girin.
+3. Kurulum paketi API adresini otomatik kullanir; sadece bu bilgisayardaki EXE yolunu girin.
 4. Script cihazi panele otomatik kaydeder, worker-config.json dosyasini doldurur ve worker'i baslatir.
 5. Sonraki ayarlari panelden degistirebilirsiniz.
 
