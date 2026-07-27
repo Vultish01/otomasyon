@@ -30,21 +30,21 @@ const downloadItems = [
   {
     title: "Windows Worker Paket ZIP",
     description: "Kurulum BAT, PowerShell scripti, worker kodlari ve config sablonu tek pakette.",
-    href: "/downloads/otologin-windows-worker.zip?v=20260727-2",
+    href: "/downloads/otologin-windows-worker.zip?v=20260727-3",
     actionLabel: "ZIP indir",
     icon: Package,
   },
   {
     title: "Kurulum BAT",
     description: "ZIP icindeki ana kurulum dosyasinin ayri kopyasi. Referans veya yeniden indirme icin.",
-    href: "/downloads/install-otologin-worker.bat?v=20260727-2",
+    href: "/downloads/install-otologin-worker.bat?v=20260727-3",
     actionLabel: "BAT indir",
     icon: TerminalSquare,
   },
   {
     title: "Config Sablonu",
     description: "Otomatik kurulumda referans alinan worker-config.json sablonu.",
-    href: "/downloads/worker-config.template.json?v=20260727-2",
+    href: "/downloads/worker-config.template.json?v=20260727-3",
     actionLabel: "JSON indir",
     icon: Download,
   },
@@ -78,7 +78,7 @@ export default function Settings() {
           title="Web panelden indirilebilir worker paketi"
           action={
             <a
-              href="/downloads/otologin-windows-worker.zip?v=20260727-2"
+              href="/downloads/otologin-windows-worker.zip?v=20260727-3"
               download
               className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-sky-300"
             >

@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$installerVersion = "2026.07.27.2"
+$installerVersion = "2026.07.27.3"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptRoot
@@ -165,11 +165,11 @@ payload = json.loads(os.environ["OTOLOGIN_REGISTRATION_BODY"])
 try:
     response = httpx.post(url, json=payload, timeout=60.0)
 except Exception as exc:
-    print(f"Baglanti hatasi: {exc}", file=sys.stderr)
+    sys.stderr.write("Baglanti hatasi: %s\n" % exc)
     sys.exit(1)
 
 if response.is_error:
-    print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
+    sys.stderr.write("HTTP %s: %s\n" % (response.status_code, response.text))
     sys.exit(1)
 
 print(response.text)
