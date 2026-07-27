@@ -56,6 +56,26 @@ def test_load_worker_config_reads_json_values(tmp_path):
     assert config.automation_rules.helper_automation.program_path == r"C:\\Helper\\helper.exe"
 
 
+def test_load_worker_config_accepts_utf8_bom(tmp_path):
+    config_path = tmp_path / "worker-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "api_base_url": "https://panel.example.com",
+                "device_id": "win-bom-01",
+                "machine_key": "machine-bom-01",
+            }
+        ),
+        encoding="utf-8-sig",
+    )
+
+    config = load_worker_config(str(config_path))
+
+    assert config.api_base_url == "https://panel.example.com"
+    assert config.device_id == "win-bom-01"
+    assert config.machine_key == "machine-bom-01"
+
+
 def test_merge_worker_config_applies_remote_values():
     current = WorkerConfig(device_id="win-floor-01", window_count=4, exe_path=r"C:\\Apps\\broker.exe")
     merged = merge_worker_config(

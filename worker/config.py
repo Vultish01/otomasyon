@@ -77,7 +77,8 @@ def load_worker_config(config_path: str | None = None) -> WorkerConfig:
     if not resolved_path.exists():
         return WorkerConfig()
 
-    payload = json.loads(resolved_path.read_text(encoding="utf-8"))
+    # PowerShell on Windows may write UTF-8 files with BOM; accept both forms.
+    payload = json.loads(resolved_path.read_text(encoding="utf-8-sig"))
     automation_rules_payload = payload.get("automation_rules", {})
     return WorkerConfig(
         api_base_url=payload.get("api_base_url", "http://127.0.0.1:8000"),
