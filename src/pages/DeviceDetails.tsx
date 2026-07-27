@@ -38,6 +38,7 @@ export default function DeviceDetails() {
   const configs = useControlCenterStore((state) => state.configs);
   const runCommand = useControlCenterStore((state) => state.runCommand);
   const saveDeviceConfig = useControlCenterStore((state) => state.saveDeviceConfig);
+  const setCredentials = useControlCenterStore((state) => state.setCredentials);
   const loadDeviceDetail = useControlCenterStore((state) => state.loadDeviceDetail);
   const loadWorkerConfig = useControlCenterStore((state) => state.loadWorkerConfig);
   const deleteDevice = useControlCenterStore((state) => state.deleteDevice);
@@ -52,6 +53,7 @@ export default function DeviceDetails() {
   const config = deviceId ? configs[deviceId] : undefined;
 
   const [draft, setDraft] = useState<DeviceConfig | null>(config ?? null);
+  const [profilePasswords, setProfilePasswords] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!deviceId) {
@@ -159,7 +161,24 @@ export default function DeviceDetails() {
   }
 
   async function handleSave() {
+    if (!draft) return;
     await saveDeviceConfig(draft);
+
+    const credentialsToUpdate = Object.entries(profilePasswords)
+      .filter(([_, password]) => password.trim() !== "")
+      .map(([credentialId, password]) => ({
+        credential_id: credentialId,
+        password: password,
+      }));
+
+    if (credentialsToUpdate.length > 0) {
+      try {
+        await setCredentials(draft.deviceId, credentialsToUpdate);
+        setProfilePasswords({});
+      } catch (err) {
+        console.error("Şifreler güncellenemedi:", err);
+      }
+    }
   }
 
   function handleDownloadWorkerConfig() {
@@ -892,6 +911,18 @@ export default function DeviceDetails() {
                       onChange={(event) => updateProfile(profile.slot, "credentialId", event.target.value)}
                       className="h-11 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
                       placeholder="cred-hesap-a"
+                    />
+                    <input
+                      type="password"
+                      value={profilePasswords[profile.credentialId] || ""}
+                      onChange={(event) =>
+                        setProfilePasswords((prev) => ({
+                          ...prev,
+                          [profile.credentialId]: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-2xl border border-white/10 bg-white/[0.03] px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                      placeholder="Şifre (İsteğe bağlı, cihaza gönderilir)"
                     />
                     <input
                       value={profile.postLoginChoice ?? ""}

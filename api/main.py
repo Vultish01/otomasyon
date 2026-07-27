@@ -24,6 +24,7 @@ from api.models import (
     WorkerCommandAck,
     WorkerEventIn,
     WorkerHeartbeat,
+    SetCredentialsRequest,
 )
 from api.storage import (
     acknowledge_command,
@@ -318,6 +319,21 @@ def restart_all(device_id: str, request: CommandRequest, _: AuthUser = Depends(r
 def run_helper(device_id: str, request: CommandRequest, _: AuthUser = Depends(require_panel_device)) -> CommandResponse:
     _ = request
     return build_command_response(device_id, "run_helper")
+
+
+@app.post("/api/devices/{device_id}/commands/set_credentials")
+def set_credentials(device_id: str, request: SetCredentialsRequest, _: AuthUser = Depends(require_panel_device)) -> CommandResponse:
+    command = enqueue_command(device_id, "set_credentials", payload={"credentials": [cred.model_dump() for cred in request.credentials]})
+    # #region debug-point A:command-enqueued
+    _debug_report(
+        "A",
+        "api/main.py:set_credentials",
+        "Panel sifre senkronizasyonunu kuyruga aldi.",
+        {"device_id": device_id, "command_id": command.id, "command_name": "set_credentials"},
+    )
+    # #endregion
+    add_event(device_id, "info", "set_credentials", "Şifre senkronizasyon komutu kuyruğa alındı.")
+    return CommandResponse(command_id=command.id, status="queued")
 
 
 @app.post("/api/workers/heartbeat")

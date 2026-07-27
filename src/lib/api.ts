@@ -396,6 +396,13 @@ export async function postCommand(deviceId: string, command: string) {
   });
 }
 
+export async function setCredentials(deviceId: string, credentials: { credential_id: string; password: string }[]) {
+  return apiFetch<{ command_id: string; status: string }>(`/api/devices/${deviceId}/commands/set_credentials`, {
+    method: "POST",
+    body: JSON.stringify({ credentials }),
+  });
+}
+
 export async function registerDevice(payload: DeviceRegistrationRequest) {
   const response = await apiFetch<{
     device: ApiDeviceStatus;

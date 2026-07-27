@@ -16,7 +16,7 @@ AutomationState = Literal[
 ]
 WindowPosition = Literal["top_left", "top_right", "bottom_left", "bottom_right"]
 EventLevel = Literal["info", "warning", "error", "success"]
-CommandType = Literal["relogin", "restart_all", "reposition", "start_exe", "run_helper"]
+CommandType = Literal["relogin", "restart_all", "reposition", "start_exe", "run_helper", "set_credentials"]
 HelperTriggerType = Literal["none", "hotkey", "click"]
 MouseButtonType = Literal["left", "right"]
 
@@ -30,6 +30,15 @@ class AuthRegisterRequest(BaseModel):
 class AuthLoginRequest(BaseModel):
     email: str
     password: str = Field(min_length=6, max_length=128)
+
+
+class CredentialPair(BaseModel):
+    credential_id: str
+    password: str
+
+
+class SetCredentialsRequest(BaseModel):
+    credentials: list[CredentialPair]
 
 
 class AuthUser(BaseModel):

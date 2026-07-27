@@ -17,6 +17,7 @@ import {
   fetchWorkerConfig,
   postCommand,
   registerDevice,
+  setCredentials as setCredentialsRequest,
   updateDeviceConfig,
 } from "@/lib/api";
 
@@ -44,6 +45,7 @@ type ControlCenterState = {
   loadWorkerConfig: (deviceId: string) => Promise<void>;
   deleteDevice: (deviceId: string) => Promise<void>;
   claimDevice: (payload: { deviceId: string; machineKey: string }) => Promise<void>;
+  setCredentials: (deviceId: string, credentials: { credential_id: string; password: string }[]) => Promise<void>;
 };
 
 function buildAuditEntry(action: string, target: string): AuditEntry {
@@ -248,6 +250,20 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
     } catch (error) {
       set({
         lastSyncError: error instanceof Error ? error.message : "Cihaz hesaba baglanamadi.",
+      });
+      throw error;
+    }
+  },
+  setCredentials: async (deviceId, credentials) => {
+    set({ lastSyncError: undefined });
+    try {
+      await setCredentialsRequest(deviceId, credentials);
+      set((state) => ({
+        auditTrail: [buildAuditEntry("Şifreler senkronize edildi", deviceId), ...state.auditTrail].slice(0, 16),
+      }));
+    } catch (error) {
+      set({
+        lastSyncError: error instanceof Error ? error.message : "Şifreler gönderilemedi.",
       });
       throw error;
     }
