@@ -124,6 +124,11 @@ class DeviceRegistrationRequest(BaseModel):
     launch_args: list[str] = Field(default_factory=list)
 
 
+class DeviceClaimRequest(BaseModel):
+    device_id: str = Field(min_length=3, max_length=64)
+    machine_key: str = Field(min_length=6, max_length=256)
+
+
 class WorkerConfigPayload(BaseModel):
     api_base_url: str
     device_id: str

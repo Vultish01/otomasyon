@@ -305,3 +305,39 @@ def test_device_delete_removes_owned_device():
     assert delete_response.json()["status"] == "deleted"
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+def test_claim_device_assigns_hidden_device_to_current_user():
+    first_headers = auth_headers()
+    other_user = create_user("Other User", f"other-claim-{uuid.uuid4().hex[:8]}@example.com", "12345678")
+    other_headers = {"X-Session-Token": create_user_session(other_user.id)}
+
+    register_response = client.post(
+        "/api/devices/register",
+        headers=first_headers,
+        json={
+            "machine_key": f"machine-claim-{uuid.uuid4().hex[:6]}",
+            "name": "Claim PC",
+            "os_version": "Windows 11 Pro",
+            "exe_path": r"C:\Apps\Test\broker.exe",
+            "window_count": 1,
+            "health_check_interval_sec": 6,
+            "reconnect_cooldown_sec": 18,
+            "launch_args": [],
+        },
+    )
+    payload = register_response.json()
+    device_id = payload["device"]["id"]
+    machine_key = payload["worker_config"]["machine_key"]
+
+    claim_response = client.post(
+        "/api/devices/claim",
+        headers=other_headers,
+        json={"device_id": device_id, "machine_key": machine_key},
+    )
+    other_devices = client.get("/api/devices", headers=other_headers)
+
+    assert claim_response.status_code == 200
+    assert claim_response.json()["status"] == "claimed"
+    assert len(other_devices.json()) == 1
+    assert other_devices.json()[0]["id"] == device_id

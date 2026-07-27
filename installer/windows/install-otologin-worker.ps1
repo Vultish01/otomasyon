@@ -194,6 +194,8 @@ $shortcut.Save()
 Write-Host ""
 Write-Host "Kurulum tamamlandi." -ForegroundColor Green
 Write-Host "Cihaz kimligi: $($registrationResponse.device.id)" -ForegroundColor White
+Write-Host "Machine key: $($registrationResponse.worker_config.machine_key)" -ForegroundColor White
+Write-Host "Panelde cihaz gorunmezse bu iki bilgiyi Dashboard > Gorunmeyen cihaz eslestirme alaninda kullanabilirsiniz." -ForegroundColor DarkYellow
 Write-Host "worker-config.json otomatik yazildi ve Startup kisayolu olusturuldu." -ForegroundColor White
 Write-Host "Simdi worker baslatiliyor..." -ForegroundColor White
 

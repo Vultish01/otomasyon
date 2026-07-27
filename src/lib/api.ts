@@ -432,3 +432,13 @@ export async function deleteDevice(deviceId: string) {
     method: "DELETE",
   });
 }
+
+export async function claimDevice(deviceId: string, machineKey: string) {
+  return apiFetch<{ status: string; device_id: string }>(`/api/devices/claim`, {
+    method: "POST",
+    body: JSON.stringify({
+      device_id: deviceId,
+      machine_key: machineKey,
+    }),
+  });
+}

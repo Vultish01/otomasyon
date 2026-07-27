@@ -238,16 +238,18 @@ def generate_worker_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def get_default_owner_user_id(connection) -> str | None:
-    row = execute(
+def get_single_user_id(connection) -> str | None:
+    rows = execute(
         connection,
-        "SELECT id FROM users ORDER BY created_at ASC LIMIT 1",
-    ).fetchone()
-    return row["id"] if row else None
+        "SELECT id FROM users ORDER BY created_at ASC LIMIT 2",
+    ).fetchall()
+    if len(rows) != 1:
+        return None
+    return rows[0]["id"]
 
 
 def backfill_device_security_defaults(connection) -> None:
-    default_owner_user_id = get_default_owner_user_id(connection)
+    default_owner_user_id = get_single_user_id(connection)
     device_rows = execute(connection, "SELECT id, owner_user_id, worker_token FROM devices").fetchall()
 
     for row in device_rows:
@@ -279,6 +281,7 @@ def create_user(name: str, email: str, password: str) -> AuthUser:
     created_at = utc_now()
 
     with get_connection() as connection:
+        user_count_before_create = int(execute(connection, "SELECT COUNT(*) AS total FROM users").fetchone()["total"])
         existing = execute(
             connection,
             "SELECT id FROM users WHERE email = ?",
@@ -294,11 +297,12 @@ def create_user(name: str, email: str, password: str) -> AuthUser:
             """,
             (user_id, name.strip(), normalized_email, _hash_password(password, salt), salt, created_at),
         )
-        execute(
-            connection,
-            "UPDATE devices SET owner_user_id = ? WHERE owner_user_id IS NULL OR owner_user_id = ''",
-            (user_id,),
-        )
+        if user_count_before_create == 0:
+            execute(
+                connection,
+                "UPDATE devices SET owner_user_id = ? WHERE owner_user_id IS NULL OR owner_user_id = ''",
+                (user_id,),
+            )
 
     return get_user_by_id(user_id)
 
@@ -542,7 +546,7 @@ def create_device(
     launch_args = launch_args or []
 
     with get_connection() as connection:
-        effective_owner_user_id = owner_user_id or get_default_owner_user_id(connection)
+        effective_owner_user_id = owner_user_id or get_single_user_id(connection)
         existing = None
         if machine_key:
             existing = execute(
@@ -836,6 +840,23 @@ def get_device_machine_key(device_id: str) -> str | None:
     if not row:
         return None
     return row["machine_key"]
+
+
+def claim_device(device_id: str, machine_key: str, owner_user_id: str) -> bool:
+    with get_connection() as connection:
+        row = execute(
+            connection,
+            "SELECT machine_key FROM devices WHERE id = ?",
+            (device_id,),
+        ).fetchone()
+        if not row or row["machine_key"] != machine_key:
+            return False
+        execute(
+            connection,
+            "UPDATE devices SET owner_user_id = ? WHERE id = ?",
+            (owner_user_id, device_id),
+        )
+    return True
 
 
 def get_command_device_id(command_id: str) -> str | None:

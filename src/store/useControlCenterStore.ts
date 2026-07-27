@@ -9,6 +9,7 @@ import type {
   WorkerConfigPayload,
 } from "@shared/types";
 import {
+  claimDevice as claimDeviceRequest,
   deleteDevice as deleteDeviceRequest,
   fetchDeviceDetail,
   fetchDevices,
@@ -40,6 +41,7 @@ type ControlCenterState = {
   registerNewDevice: (payload: DeviceRegistrationRequest) => Promise<string>;
   loadWorkerConfig: (deviceId: string) => Promise<void>;
   deleteDevice: (deviceId: string) => Promise<void>;
+  claimDevice: (payload: { deviceId: string; machineKey: string }) => Promise<void>;
 };
 
 function buildAuditEntry(action: string, target: string): AuditEntry {
@@ -222,6 +224,21 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
     } catch (error) {
       set({
         lastSyncError: error instanceof Error ? error.message : "Cihaz silinemedi.",
+      });
+      throw error;
+    }
+  },
+  claimDevice: async ({ deviceId, machineKey }) => {
+    set({ lastSyncError: undefined });
+    try {
+      await claimDeviceRequest(deviceId, machineKey);
+      await get().loadDashboardData();
+      set((state) => ({
+        auditTrail: [buildAuditEntry("Cihaz hesaba baglandi", deviceId), ...state.auditTrail].slice(0, 16),
+      }));
+    } catch (error) {
+      set({
+        lastSyncError: error instanceof Error ? error.message : "Cihaz hesaba baglanamadi.",
       });
       throw error;
     }

@@ -27,12 +27,14 @@ export default function Dashboard() {
   const runBulkRelogin = useControlCenterStore((state) => state.runBulkRelogin);
   const loadDashboardData = useControlCenterStore((state) => state.loadDashboardData);
   const registerNewDevice = useControlCenterStore((state) => state.registerNewDevice);
+  const claimDevice = useControlCenterStore((state) => state.claimDevice);
   const deleteDevice = useControlCenterStore((state) => state.deleteDevice);
   const isLoadingDevices = useControlCenterStore((state) => state.isLoadingDevices);
   const isRegisteringDevice = useControlCenterStore((state) => state.isRegisteringDevice);
   const lastSyncError = useControlCenterStore((state) => state.lastSyncError);
 
   const [registrationForm, setRegistrationForm] = useState<DeviceRegistrationRequest>(initialRegistrationForm);
+  const [claimForm, setClaimForm] = useState({ deviceId: "", machineKey: "" });
 
   useEffect(() => {
     void loadDashboardData();
@@ -81,6 +83,21 @@ export default function Dashboard() {
     }
     try {
       await deleteDevice(device.id);
+    } catch {
+      return;
+    }
+  }
+
+  async function handleClaimDevice() {
+    if (!claimForm.deviceId.trim() || !claimForm.machineKey.trim()) {
+      return;
+    }
+    try {
+      await claimDevice({
+        deviceId: claimForm.deviceId.trim(),
+        machineKey: claimForm.machineKey.trim(),
+      });
+      setClaimForm({ deviceId: "", machineKey: "" });
     } catch {
       return;
     }
@@ -291,6 +308,53 @@ export default function Dashboard() {
             <p className="text-sm leading-7 text-slate-400">
               Normal akista Windows kurulum paketi cihazi otomatik kaydeder. Bu alan ise manuel
               onboarding veya test cihazlari icin yedek yol olarak kalir.
+            </p>
+          </div>
+        </SectionCard>
+
+        <SectionCard eyebrow="Gorunmeyen cihaz eslestirme" title="Windows'ta kayit olmus ama panelde gorunmeyen cihazi hesabina bagla">
+          <div className="rounded-[24px] border border-sky-400/15 bg-sky-400/[0.05] px-5 py-4 text-sm leading-7 text-slate-200">
+            Kurulum konsolunda gorunen <span className="font-semibold text-white">device id</span> ile
+            {" "}
+            <code className="rounded bg-slate-950/70 px-2 py-1 text-sky-200">worker-config.json</code>
+            {" "}
+            ya da
+            {" "}
+            <code className="rounded bg-slate-950/70 px-2 py-1 text-sky-200">machine-identity.json</code>
+            {" "}
+            icindeki <span className="font-semibold text-white">machine_key</span> degerini buraya gir.
+          </div>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Device ID</span>
+              <input
+                value={claimForm.deviceId}
+                onChange={(event) => setClaimForm((state) => ({ ...state, deviceId: event.target.value }))}
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="desktop-123abc"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Machine Key</span>
+              <input
+                value={claimForm.machineKey}
+                onChange={(event) => setClaimForm((state) => ({ ...state, machineKey: event.target.value }))}
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="win-acer-4f8f..."
+              />
+            </label>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={!claimForm.deviceId.trim() || !claimForm.machineKey.trim()}
+              onClick={() => void handleClaimDevice()}
+              className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
+            >
+              Cihazi hesabima bagla
+            </button>
+            <p className="text-sm leading-7 text-slate-400">
+              Bu islem sadece fiziksel olarak sende olan Windows makinedeki machine key dogruysa calisir.
             </p>
           </div>
         </SectionCard>

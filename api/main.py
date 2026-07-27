@@ -16,6 +16,7 @@ from api.models import (
     AuthUser,
     CommandRequest,
     CommandResponse,
+    DeviceClaimRequest,
     DeviceConfig,
     DeviceRegistrationRequest,
     DeviceRegistrationResponse,
@@ -30,6 +31,7 @@ from api.storage import (
     build_worker_config_payload,
     count_users,
     delete_device,
+    claim_device,
     create_device,
     create_user,
     create_user_session,
@@ -255,6 +257,15 @@ def put_device_config(device_id: str, config: DeviceConfig, _: AuthUser = Depend
 def remove_device(device_id: str, _: AuthUser = Depends(require_panel_device)):
     delete_device(device_id)
     return {"status": "deleted"}
+
+
+@app.post("/api/devices/claim")
+def claim_hidden_device(payload: DeviceClaimRequest, user: AuthUser = Depends(require_panel_user)):
+    claimed = claim_device(payload.device_id, payload.machine_key, user.id)
+    if not claimed:
+        raise HTTPException(status_code=404, detail="Cihaz bulunamadi veya machine key eslesmedi.")
+    add_event(payload.device_id, "info", "device_claimed", "Cihaz mevcut hesaba baglandi.")
+    return {"status": "claimed", "device_id": payload.device_id}
 
 
 @app.get("/api/devices/{device_id}/worker-config")
