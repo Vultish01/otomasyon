@@ -1,36 +1,86 @@
-import { AlertTriangle, ArrowUpRight, Monitor, RefreshCcw, ShieldCheck, TimerReset } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ArrowUpRight, Download, Monitor, RefreshCcw, ShieldCheck, TimerReset } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import type { DeviceRegistrationRequest } from "@shared/types";
 import { DeviceCard } from "@/components/DeviceCard";
 import { LayoutShell } from "@/components/LayoutShell";
 import { SectionCard } from "@/components/SectionCard";
 import { useControlCenterStore } from "@/store/useControlCenterStore";
+import { downloadJson } from "@/utils/download";
 import { formatDate } from "@/utils/format";
 
-const summaryItems = [
-  {
-    label: "Bagli cihaz",
-    value: "3",
-    icon: Monitor,
-    accent: "from-sky-400/20 to-transparent text-sky-100",
-  },
-  {
-    label: "Aktif koruma",
-    value: "2FA + Token",
-    icon: ShieldCheck,
-    accent: "from-emerald-400/20 to-transparent text-emerald-100",
-  },
-  {
-    label: "Bekleyen retry",
-    value: "7",
-    icon: TimerReset,
-    accent: "from-amber-400/20 to-transparent text-amber-100",
-  },
-];
+const initialRegistrationForm: DeviceRegistrationRequest = {
+  name: "",
+  osVersion: "Windows 11 Pro",
+  exePath: "",
+  windowCount: 4,
+  healthCheckIntervalSec: 5,
+  reconnectCooldownSec: 15,
+  launchArgs: [],
+};
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const devices = useControlCenterStore((state) => state.devices);
   const events = useControlCenterStore((state) => state.events);
   const runCommand = useControlCenterStore((state) => state.runCommand);
   const runBulkRelogin = useControlCenterStore((state) => state.runBulkRelogin);
+  const loadDashboardData = useControlCenterStore((state) => state.loadDashboardData);
+  const registerNewDevice = useControlCenterStore((state) => state.registerNewDevice);
+  const isLoadingDevices = useControlCenterStore((state) => state.isLoadingDevices);
+  const isRegisteringDevice = useControlCenterStore((state) => state.isRegisteringDevice);
+  const lastSyncError = useControlCenterStore((state) => state.lastSyncError);
+
+  const [registrationForm, setRegistrationForm] = useState<DeviceRegistrationRequest>(initialRegistrationForm);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
+
+  const summaryItems = useMemo(
+    () => [
+      {
+        label: "Bagli cihaz",
+        value: `${devices.length}`,
+        icon: Monitor,
+        accent: "from-sky-400/20 to-transparent text-sky-100",
+      },
+      {
+        label: "Aktif koruma",
+        value: "2FA + Token",
+        icon: ShieldCheck,
+        accent: "from-emerald-400/20 to-transparent text-emerald-100",
+      },
+      {
+        label: "Bekleyen retry",
+        value: `${devices.reduce((sum, item) => sum + item.retriesToday, 0)}`,
+        icon: TimerReset,
+        accent: "from-amber-400/20 to-transparent text-amber-100",
+      },
+    ],
+    [devices],
+  );
+
+  async function handleRegisterDevice() {
+    try {
+      const deviceId = await registerNewDevice(registrationForm);
+      const workerConfig = useControlCenterStore.getState().workerConfigByDeviceId[deviceId];
+      if (workerConfig) {
+        downloadJson(`worker-config-${deviceId}.json`, {
+          api_base_url: workerConfig.apiBaseUrl,
+          device_id: workerConfig.deviceId,
+          health_check_interval_sec: workerConfig.healthCheckIntervalSec,
+          reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
+          exe_path: workerConfig.exePath,
+          launch_args: workerConfig.launchArgs,
+        });
+      }
+      setRegistrationForm(initialRegistrationForm);
+      navigate(`/devices/${deviceId}`);
+    } catch {
+      return;
+    }
+  }
 
   return (
     <LayoutShell>
@@ -42,16 +92,16 @@ export default function Dashboard() {
                 Canli kontrol
               </div>
               <h2 className="mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-white">
-                Internet koptugunda bile 3 Windows makinedeki 4'lu pencere duzenini ayakta tutan panel.
+                Internet koptugunda bile Windows makinelerdeki 4'lu pencere duzenini ayakta tutan panel.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                Bu MVP, relogin, yeniden acma, secim ekrani ilerletme ve pencere konumlandirma
-                akislarini tek merkezden yonetmek icin tasarlandi.
+                Buradan yeni cihaz kaydi olusturabilir, worker config indirebilir ve her
+                cihaz icin pencere sayisi ile otomasyon araliklarini yonetebilirsin.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={runBulkRelogin}
+                  onClick={() => void runBulkRelogin()}
                   className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300"
                 >
                   <RefreshCcw className="h-4 w-4" />
@@ -91,18 +141,135 @@ export default function Dashboard() {
           </div>
         </section>
 
+        <SectionCard eyebrow="Yeni cihaz bagla" title="Panelden Windows worker kaydi olustur">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Cihaz adi</span>
+              <input
+                value={registrationForm.name}
+                onChange={(event) => setRegistrationForm((state) => ({ ...state, name: event.target.value }))}
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="Borsa PC 04"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Isletim sistemi</span>
+              <input
+                value={registrationForm.osVersion}
+                onChange={(event) => setRegistrationForm((state) => ({ ...state, osVersion: event.target.value }))}
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="Windows 11 Pro"
+              />
+            </label>
+            <label className="block lg:col-span-2">
+              <span className="text-sm font-medium text-slate-200">EXE yolu</span>
+              <input
+                value={registrationForm.exePath}
+                onChange={(event) => setRegistrationForm((state) => ({ ...state, exePath: event.target.value }))}
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="C:\\Program Files\\Uygulama\\app.exe"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Pencere sayisi</span>
+              <input
+                type="number"
+                min={1}
+                max={4}
+                value={registrationForm.windowCount}
+                onChange={(event) =>
+                  setRegistrationForm((state) => ({ ...state, windowCount: Number(event.target.value) || 1 }))
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Kontrol araligi (sn)</span>
+              <input
+                type="number"
+                min={2}
+                max={300}
+                value={registrationForm.healthCheckIntervalSec}
+                onChange={(event) =>
+                  setRegistrationForm((state) => ({
+                    ...state,
+                    healthCheckIntervalSec: Number(event.target.value) || 5,
+                  }))
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Reconnect cooldown (sn)</span>
+              <input
+                type="number"
+                min={5}
+                max={600}
+                value={registrationForm.reconnectCooldownSec}
+                onChange={(event) =>
+                  setRegistrationForm((state) => ({
+                    ...state,
+                    reconnectCooldownSec: Number(event.target.value) || 15,
+                  }))
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Launch argumanlari</span>
+              <input
+                value={registrationForm.launchArgs.join(" ")}
+                onChange={(event) =>
+                  setRegistrationForm((state) => ({
+                    ...state,
+                    launchArgs: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [],
+                  }))
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="--legacy-render --foo"
+              />
+            </label>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              disabled={!registrationForm.name || !registrationForm.exePath || isRegisteringDevice}
+              onClick={() => void handleRegisterDevice()}
+              className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
+            >
+              <Download className="h-4 w-4" />
+              Kaydet ve worker config indir
+            </button>
+            <p className="text-sm leading-7 text-slate-400">
+              Kayit sonrasi cihaz detayina yonlendirileceksin ve indirilen `worker-config.json`
+              dosyasini Windows paketinin icine koyabileceksin.
+            </p>
+          </div>
+        </SectionCard>
+
+        {lastSyncError ? (
+          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            {lastSyncError}
+          </div>
+        ) : null}
+
         <SectionCard
           eyebrow="Canli cihazlar"
           title="Windows makineler ve otomasyon durumu"
           action={
             <div className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
-              Son yenileme: {formatDate(new Date().toISOString())}
+              {isLoadingDevices ? "Yukleniyor..." : `Son yenileme: ${formatDate(new Date().toISOString())}`}
             </div>
           }
         >
           <div className="grid gap-5 xl:grid-cols-2">
             {devices.map((device) => (
-              <DeviceCard key={device.id} device={device} onRunCommand={runCommand} />
+              <DeviceCard
+                key={device.id}
+                device={device}
+                onRunCommand={(deviceId, command) => void runCommand(deviceId, command)}
+              />
             ))}
           </div>
         </SectionCard>

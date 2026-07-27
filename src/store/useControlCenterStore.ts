@@ -4,8 +4,19 @@ import type {
   DeviceCommand,
   DeviceConfig,
   DeviceEvent,
+  DeviceRegistrationRequest,
   DeviceStatus,
+  WorkerConfigPayload,
 } from "@shared/types";
+import {
+  fetchDeviceDetail,
+  fetchDevices,
+  fetchLogs,
+  fetchWorkerConfig,
+  postCommand,
+  registerDevice,
+  updateDeviceConfig,
+} from "@/lib/api";
 
 type ControlCenterState = {
   devices: DeviceStatus[];
@@ -13,10 +24,20 @@ type ControlCenterState = {
   events: DeviceEvent[];
   auditTrail: AuditEntry[];
   selectedDeviceId: string;
+  isLoadingDevices: boolean;
+  isLoadingDeviceDetail: boolean;
+  isSavingConfig: boolean;
+  isRegisteringDevice: boolean;
+  workerConfigByDeviceId: Record<string, WorkerConfigPayload>;
+  lastSyncError?: string;
   setSelectedDeviceId: (deviceId: string) => void;
-  runCommand: (deviceId: string, command: DeviceCommand) => void;
-  runBulkRelogin: () => void;
-  saveExePath: (deviceId: string, exePath: string) => void;
+  loadDashboardData: () => Promise<void>;
+  loadDeviceDetail: (deviceId: string) => Promise<void>;
+  runCommand: (deviceId: string, command: DeviceCommand) => Promise<void>;
+  runBulkRelogin: () => Promise<void>;
+  saveDeviceConfig: (config: DeviceConfig) => Promise<void>;
+  registerNewDevice: (payload: DeviceRegistrationRequest) => Promise<string>;
+  loadWorkerConfig: (deviceId: string) => Promise<void>;
 };
 
 const now = "2026-07-27T02:50:00.000Z";
@@ -112,24 +133,6 @@ const seededConfigs: Record<string, DeviceConfig> = {
       },
     ],
   },
-  "win-floor-02": {
-    deviceId: "win-floor-02",
-    exePath: "D:\\Trading\\broker.exe",
-    launchArgs: [],
-    windowCount: 4,
-    healthCheckIntervalSec: 10,
-    reconnectCooldownSec: 25,
-    profiles: [],
-  },
-  "win-floor-03": {
-    deviceId: "win-floor-03",
-    exePath: "C:\\Legacy\\broker.exe",
-    launchArgs: ["--legacy-render"],
-    windowCount: 4,
-    healthCheckIntervalSec: 8,
-    reconnectCooldownSec: 20,
-    profiles: [],
-  },
 };
 
 const seededEvents: DeviceEvent[] = [
@@ -149,22 +152,6 @@ const seededEvents: DeviceEvent[] = [
     message: "Eski pencere kapatildi, EXE yeniden baslatildi.",
     createdAt: "2026-07-27T02:48:40.000Z",
   },
-  {
-    id: "evt-3",
-    deviceId: "win-floor-02",
-    level: "error",
-    eventType: "connectivity_lost",
-    message: "Internet kontrolu basarisiz. Cooldown suresi icinde yeniden deneme yapilmayacak.",
-    createdAt: "2026-07-27T02:47:10.000Z",
-  },
-  {
-    id: "evt-4",
-    deviceId: "win-floor-01",
-    level: "success",
-    eventType: "quadrant_positioned",
-    message: "Tum 4 pencere hedef ceyreklerde dogrulandi.",
-    createdAt: "2026-07-27T02:45:21.000Z",
-  },
 ];
 
 const seededAudit: AuditEntry[] = [
@@ -175,124 +162,148 @@ const seededAudit: AuditEntry[] = [
     target: "Tum cihazlar",
     createdAt: "2026-07-27T02:20:00.000Z",
   },
-  {
-    id: "audit-2",
-    actor: "worker/win-floor-03",
-    action: "Otomatik relogin",
-    target: "Pencere 3",
-    createdAt: "2026-07-27T02:48:45.000Z",
-  },
 ];
 
-function commandState(command: DeviceCommand): DeviceStatus["automationState"] {
-  switch (command) {
-    case "relogin":
-      return "logging_in";
-    case "restart_all":
-      return "relaunching";
-    case "reposition":
-      return "positioning";
-    case "start_exe":
-      return "checking";
-    default:
-      return "idle";
-  }
+function buildAuditEntry(action: string, target: string): AuditEntry {
+  return {
+    id: `audit-${Date.now()}`,
+    actor: "moe@control.local",
+    action,
+    target,
+    createdAt: new Date().toISOString(),
+  };
 }
 
-export const useControlCenterStore = create<ControlCenterState>((set) => ({
+export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
   devices: seededDevices,
   configs: seededConfigs,
   events: seededEvents,
   auditTrail: seededAudit,
   selectedDeviceId: "win-floor-01",
+  isLoadingDevices: false,
+  isLoadingDeviceDetail: false,
+  isSavingConfig: false,
+  isRegisteringDevice: false,
+  workerConfigByDeviceId: {},
+  lastSyncError: undefined,
   setSelectedDeviceId: (deviceId) => set({ selectedDeviceId: deviceId }),
-  runCommand: (deviceId, command) =>
-    set((state) => {
-      const devices = state.devices.map((device) =>
-        device.id === deviceId
-          ? {
-              ...device,
-              automationState: commandState(command),
-              lastHeartbeatAt: new Date().toISOString(),
-              lastError:
-                command === "relogin" && !device.internetReachable
-                  ? "Internet kapali oldugu icin login ertelendi."
-                  : undefined,
-            }
-          : device,
-      );
-
-      const nextEvent: DeviceEvent = {
-        id: `evt-${state.events.length + 1}`,
-        deviceId,
-        level: command === "reposition" ? "success" : "info",
-        eventType: command,
-        message:
-          command === "reposition"
-            ? "Pencereler yeniden hizalama kuyruguna alindi."
-            : `Komut calistirildi: ${command}`,
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextAudit: AuditEntry = {
-        id: `audit-${state.auditTrail.length + 1}`,
-        actor: "moe@control.local",
-        action: `Komut: ${command}`,
-        target: deviceId,
-        createdAt: new Date().toISOString(),
-      };
-
-      return {
+  loadDashboardData: async () => {
+    set({ isLoadingDevices: true, lastSyncError: undefined });
+    try {
+      const [devices, events] = await Promise.all([fetchDevices(), fetchLogs()]);
+      set({
         devices,
-        events: [nextEvent, ...state.events].slice(0, 16),
-        auditTrail: [nextAudit, ...state.auditTrail].slice(0, 16),
-      };
-    }),
-  runBulkRelogin: () =>
-    set((state) => {
-      const nextEvent: DeviceEvent = {
-        id: `evt-${state.events.length + 1}`,
-        deviceId: "all",
-        level: "info",
-        eventType: "bulk_relogin",
-        message: "Tum uygun cihazlar relogin kuyruguna alindi.",
-        createdAt: new Date().toISOString(),
-      };
-
-      const nextAudit: AuditEntry = {
-        id: `audit-${state.auditTrail.length + 1}`,
-        actor: "moe@control.local",
-        action: "Toplu relogin",
-        target: "Tum cihazlar",
-        createdAt: new Date().toISOString(),
-      };
-
-      return {
-        devices: state.devices.map((device) => ({
-          ...device,
-          automationState: device.internetReachable ? "logging_in" : "checking",
-          lastHeartbeatAt: new Date().toISOString(),
-        })),
-        events: [nextEvent, ...state.events].slice(0, 16),
-        auditTrail: [nextAudit, ...state.auditTrail].slice(0, 16),
-      };
-    }),
-  saveExePath: (deviceId, exePath) =>
-    set((state) => ({
-      configs: {
-        ...state.configs,
-        [deviceId]: {
-          ...state.configs[deviceId],
-          exePath,
+        events: events.slice(0, 16),
+        isLoadingDevices: false,
+      });
+    } catch (error) {
+      set({
+        isLoadingDevices: false,
+        lastSyncError: error instanceof Error ? error.message : "Cihaz verileri alinamadi.",
+      });
+    }
+  },
+  loadDeviceDetail: async (deviceId) => {
+    set({ isLoadingDeviceDetail: true, lastSyncError: undefined });
+    try {
+      const { device, config } = await fetchDeviceDetail(deviceId);
+      set((state) => ({
+        devices: state.devices.some((item) => item.id === device.id)
+          ? state.devices.map((item) => (item.id === device.id ? device : item))
+          : [device, ...state.devices],
+        configs: {
+          ...state.configs,
+          [deviceId]: config,
         },
-      },
-      devices: state.devices.map((device) =>
-        device.id === deviceId
-          ? {
-              ...device,
-              exePath,
-            }
-          : device,
-      ),
-    })),
+        selectedDeviceId: deviceId,
+        isLoadingDeviceDetail: false,
+      }));
+    } catch (error) {
+      set({
+        isLoadingDeviceDetail: false,
+        lastSyncError: error instanceof Error ? error.message : "Cihaz detayi alinamadi.",
+      });
+    }
+  },
+  runCommand: async (deviceId, command) => {
+    try {
+      await postCommand(deviceId, command);
+      set((state) => ({
+        auditTrail: [buildAuditEntry(`Komut: ${command}`, deviceId), ...state.auditTrail].slice(0, 16),
+      }));
+      await get().loadDashboardData();
+      await get().loadDeviceDetail(deviceId);
+    } catch (error) {
+      set({
+        lastSyncError: error instanceof Error ? error.message : "Komut gonderilemedi.",
+      });
+    }
+  },
+  runBulkRelogin: async () => {
+    await Promise.all(get().devices.map((device) => get().runCommand(device.id, "relogin")));
+  },
+  saveDeviceConfig: async (config) => {
+    set({ isSavingConfig: true, lastSyncError: undefined });
+    try {
+      await updateDeviceConfig(config);
+      set((state) => ({
+        configs: {
+          ...state.configs,
+          [config.deviceId]: config,
+        },
+        auditTrail: [buildAuditEntry("Konfigrasyon guncellendi", config.deviceId), ...state.auditTrail].slice(0, 16),
+        isSavingConfig: false,
+      }));
+      await get().loadDeviceDetail(config.deviceId);
+      await get().loadWorkerConfig(config.deviceId);
+    } catch (error) {
+      set({
+        isSavingConfig: false,
+        lastSyncError: error instanceof Error ? error.message : "Konfigrasyon kaydedilemedi.",
+      });
+    }
+  },
+  registerNewDevice: async (payload) => {
+    set({ isRegisteringDevice: true, lastSyncError: undefined });
+    try {
+      const result = await registerDevice(payload);
+      set((state) => ({
+        devices: [result.device, ...state.devices],
+        configs: {
+          ...state.configs,
+          [result.device.id]: result.config,
+        },
+        workerConfigByDeviceId: {
+          ...state.workerConfigByDeviceId,
+          [result.device.id]: result.workerConfig,
+        },
+        selectedDeviceId: result.device.id,
+        auditTrail: [buildAuditEntry("Yeni cihaz kaydi", result.device.id), ...state.auditTrail].slice(0, 16),
+        isRegisteringDevice: false,
+      }));
+      await get().loadDashboardData();
+      return result.device.id;
+    } catch (error) {
+      set({
+        isRegisteringDevice: false,
+        lastSyncError: error instanceof Error ? error.message : "Yeni cihaz kaydi basarisiz.",
+      });
+      throw error;
+    }
+  },
+  loadWorkerConfig: async (deviceId) => {
+    try {
+      const workerConfig = await fetchWorkerConfig(deviceId);
+      set((state) => ({
+        workerConfigByDeviceId: {
+          ...state.workerConfigByDeviceId,
+          [deviceId]: workerConfig,
+        },
+      }));
+    } catch (error) {
+      set({
+        lastSyncError: error instanceof Error ? error.message : "Worker config alinamadi.",
+      });
+    }
+  },
 }));

@@ -26,9 +26,10 @@ const securityItems = [
 ];
 
 const setupSteps = [
+  "Panelde once yeni cihaz kaydi olustur ve worker-config.json dosyasini indir.",
   "Windows makineden paneldeki ZIP paketini indir.",
   "ZIP'i cikartip icindeki install-otologin-worker.bat dosyasini calistir.",
-  "worker-config.json icinde api adresi, cihaz kimligi ve EXE yolunu doldur.",
+  "Indirdigin worker-config.json dosyasini paket klasorune koy.",
   "start-otologin-worker.bat ile worker'i baslat.",
 ];
 

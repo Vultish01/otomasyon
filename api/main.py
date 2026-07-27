@@ -3,12 +3,23 @@ from __future__ import annotations
 import os
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.models import CommandRequest, CommandResponse, DeviceConfig, LogBundle, WorkerEventIn, WorkerHeartbeat
+from api.models import (
+    CommandRequest,
+    CommandResponse,
+    DeviceConfig,
+    DeviceRegistrationRequest,
+    DeviceRegistrationResponse,
+    LogBundle,
+    WorkerEventIn,
+    WorkerHeartbeat,
+)
 from api.storage import (
     add_event,
+    build_worker_config_payload,
+    create_device,
     get_device,
     get_device_config,
     initialize_database,
@@ -52,6 +63,22 @@ def get_devices():
     return [device.model_dump(mode="json") for device in list_devices()]
 
 
+@app.post("/api/devices/register", response_model=DeviceRegistrationResponse)
+def register_device(payload: DeviceRegistrationRequest, request: Request) -> DeviceRegistrationResponse:
+    device, config = create_device(
+        name=payload.name,
+        os_version=payload.os_version,
+        exe_path=payload.exe_path,
+        window_count=payload.window_count,
+        health_check_interval_sec=payload.health_check_interval_sec,
+        reconnect_cooldown_sec=payload.reconnect_cooldown_sec,
+        launch_args=payload.launch_args,
+    )
+    add_event(device.id, "info", "device_registered", "Yeni cihaz panel uzerinden olusturuldu.")
+    worker_config = build_worker_config_payload(str(request.base_url).rstrip("/"), config)
+    return DeviceRegistrationResponse(device=device, config=config, worker_config=worker_config)
+
+
 @app.get("/api/devices/{device_id}")
 def get_device_detail(device_id: str):
     device = get_device(device_id)
@@ -71,6 +98,14 @@ def put_device_config(device_id: str, config: DeviceConfig):
     update_device_config(device_id, config)
     add_event(device_id, "info", "config_updated", "Cihaz konfigrasyonu panel uzerinden guncellendi.")
     return {"status": "updated"}
+
+
+@app.get("/api/devices/{device_id}/worker-config")
+def get_worker_config(device_id: str, request: Request):
+    config = get_device_config(device_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Cihaz konfigurasyonu bulunamadi.")
+    return build_worker_config_payload(str(request.base_url).rstrip("/"), config).model_dump(mode="json")
 
 
 def build_command_response(device_id: str, command_name: str) -> CommandResponse:

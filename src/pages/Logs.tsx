@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { LayoutShell } from "@/components/LayoutShell";
 import { SectionCard } from "@/components/SectionCard";
 import { useControlCenterStore } from "@/store/useControlCenterStore";
@@ -6,6 +7,11 @@ import { formatDate } from "@/utils/format";
 export default function Logs() {
   const events = useControlCenterStore((state) => state.events);
   const auditTrail = useControlCenterStore((state) => state.auditTrail);
+  const loadDashboardData = useControlCenterStore((state) => state.loadDashboardData);
+
+  useEffect(() => {
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   return (
     <LayoutShell>

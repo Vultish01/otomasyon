@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from api.models import DeviceConfig, DeviceEvent, DeviceStatus, WindowProfile
+from api.models import DeviceConfig, DeviceEvent, DeviceStatus, WindowProfile, WorkerConfigPayload
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -356,6 +357,91 @@ def update_device_config(device_id: str, config: DeviceConfig) -> None:
                 """,
                 [profile.model_dump() for profile in config.profiles],
             )
+
+
+def create_device(
+    name: str,
+    os_version: str,
+    exe_path: str,
+    window_count: int,
+    health_check_interval_sec: int,
+    reconnect_cooldown_sec: int,
+    launch_args: list[str] | None = None,
+) -> tuple[DeviceStatus, DeviceConfig]:
+    safe_name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "win-device"
+    device_id = f"{safe_name[:20]}-{uuid.uuid4().hex[:6]}"
+    launch_args = launch_args or []
+
+    device = DeviceStatus(
+        id=device_id,
+        name=name,
+        os_version=os_version,
+        online=False,
+        internet_reachable=False,
+        last_heartbeat_at=datetime.now(timezone.utc),
+        automation_state="idle",
+        active_windows=0,
+        exe_path=exe_path,
+        retries_today=0,
+    )
+    config = DeviceConfig(
+        device_id=device_id,
+        exe_path=exe_path,
+        launch_args=launch_args,
+        window_count=window_count,
+        health_check_interval_sec=health_check_interval_sec,
+        reconnect_cooldown_sec=reconnect_cooldown_sec,
+        profiles=[],
+    )
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO devices
+            (id, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                device.id,
+                device.name,
+                device.os_version,
+                int(device.online),
+                int(device.internet_reachable),
+                device.last_heartbeat_at.isoformat(),
+                device.automation_state,
+                device.last_error,
+                device.active_windows,
+                device.exe_path,
+                device.retries_today,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO device_configs
+            (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                config.device_id,
+                config.exe_path,
+                json.dumps(config.launch_args),
+                config.window_count,
+                config.health_check_interval_sec,
+                config.reconnect_cooldown_sec,
+            ),
+        )
+    return device, config
+
+
+def build_worker_config_payload(api_base_url: str, config: DeviceConfig) -> WorkerConfigPayload:
+    return WorkerConfigPayload(
+        api_base_url=api_base_url.rstrip("/"),
+        device_id=config.device_id,
+        health_check_interval_sec=config.health_check_interval_sec,
+        reconnect_cooldown_sec=config.reconnect_cooldown_sec,
+        exe_path=config.exe_path,
+        launch_args=config.launch_args,
+    )
 
 
 def add_event(device_id: str, level: str, event_type: str, message: str) -> DeviceEvent:

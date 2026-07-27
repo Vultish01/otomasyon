@@ -54,6 +54,31 @@ class DeviceStatus(BaseModel):
     retries_today: int = 0
 
 
+class DeviceRegistrationRequest(BaseModel):
+    name: str
+    os_version: str
+    exe_path: str
+    window_count: int = Field(default=4, ge=1, le=4)
+    health_check_interval_sec: int = Field(default=5, ge=2, le=300)
+    reconnect_cooldown_sec: int = Field(default=15, ge=5, le=600)
+    launch_args: list[str] = Field(default_factory=list)
+
+
+class WorkerConfigPayload(BaseModel):
+    api_base_url: str
+    device_id: str
+    health_check_interval_sec: int
+    reconnect_cooldown_sec: int
+    exe_path: str
+    launch_args: list[str] = Field(default_factory=list)
+
+
+class DeviceRegistrationResponse(BaseModel):
+    device: DeviceStatus
+    config: DeviceConfig
+    worker_config: WorkerConfigPayload
+
+
 class DeviceEvent(BaseModel):
     id: str
     device_id: str

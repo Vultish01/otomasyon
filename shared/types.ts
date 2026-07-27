@@ -69,3 +69,22 @@ export type DeviceConfig = {
   reconnectCooldownSec: number;
   profiles: WindowProfile[];
 };
+
+export type DeviceRegistrationRequest = {
+  name: string;
+  osVersion: string;
+  exePath: string;
+  windowCount: number;
+  healthCheckIntervalSec: number;
+  reconnectCooldownSec: number;
+  launchArgs: string[];
+};
+
+export type WorkerConfigPayload = {
+  apiBaseUrl: string;
+  deviceId: string;
+  healthCheckIntervalSec: number;
+  reconnectCooldownSec: number;
+  exePath: string;
+  launchArgs: string[];
+};

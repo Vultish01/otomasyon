@@ -32,3 +32,32 @@ def test_worker_event_creates_log_entry():
     )
     assert response.status_code == 200
     assert response.json()["event_type"] == "manual_test"
+
+
+def test_device_registration_returns_worker_config():
+    response = client.post(
+        "/api/devices/register",
+        json={
+            "name": "Test PC",
+            "os_version": "Windows 11 Pro",
+            "exe_path": r"C:\Apps\Test\broker.exe",
+            "window_count": 4,
+            "health_check_interval_sec": 6,
+            "reconnect_cooldown_sec": 18,
+            "launch_args": ["--demo"],
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["device"]["name"] == "Test PC"
+    assert payload["worker_config"]["device_id"] == payload["device"]["id"]
+    assert payload["worker_config"]["launch_args"] == ["--demo"]
+
+
+def test_worker_config_endpoint_returns_device_payload():
+    device_id = client.get("/api/devices").json()[0]["id"]
+    response = client.get(f"/api/devices/{device_id}/worker-config")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["device_id"] == device_id
+    assert "exe_path" in payload
