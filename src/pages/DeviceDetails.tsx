@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Download, Play, RefreshCcw, Save, Waypoints } from "lucide-react";
+import { ArrowLeft, Download, Play, RefreshCcw, Save, Trash2, Waypoints } from "lucide-react";
 import type { DeviceConfig, WindowProfile } from "@shared/types";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { LayoutShell } from "@/components/LayoutShell";
@@ -38,6 +38,7 @@ export default function DeviceDetails() {
   const saveDeviceConfig = useControlCenterStore((state) => state.saveDeviceConfig);
   const loadDeviceDetail = useControlCenterStore((state) => state.loadDeviceDetail);
   const loadWorkerConfig = useControlCenterStore((state) => state.loadWorkerConfig);
+  const deleteDevice = useControlCenterStore((state) => state.deleteDevice);
   const workerConfig = useControlCenterStore((state) =>
     deviceId ? state.workerConfigByDeviceId[deviceId] : undefined,
   );
@@ -143,6 +144,7 @@ export default function DeviceDetails() {
       api_base_url: workerConfig.apiBaseUrl,
       device_id: workerConfig.deviceId,
       machine_key: workerConfig.machineKey,
+      worker_token: workerConfig.workerToken,
       window_count: workerConfig.windowCount,
       health_check_interval_sec: workerConfig.healthCheckIntervalSec,
       reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
@@ -184,6 +186,16 @@ export default function DeviceDetails() {
     });
   }
 
+  async function handleDeleteDevice() {
+    const confirmed = window.confirm(
+      `${device.name} cihazini silmek istiyor musun? Bu islem konfig, log ve komut gecmisini kaldirir.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    await deleteDevice(deviceId);
+  }
+
   return (
     <LayoutShell>
       <div className="space-y-6">
@@ -198,7 +210,17 @@ export default function DeviceDetails() {
               Bu ekranda cihaz bazli EXE yolu, pencere profilleri ve worker konfigrasyonu yonetilir.
             </p>
           </div>
-          <StatusBadge state={device.automationState} internetReachable={device.internetReachable} />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleDeleteDevice()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/20 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Cihazi sil
+            </button>
+            <StatusBadge state={device.automationState} internetReachable={device.internetReachable} />
+          </div>
         </div>
 
         {lastSyncError ? (

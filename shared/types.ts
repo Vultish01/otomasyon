@@ -116,6 +116,7 @@ export type WorkerConfigPayload = {
   apiBaseUrl: string;
   deviceId: string;
   machineKey?: string;
+  workerToken?: string;
   windowCount: number;
   healthCheckIntervalSec: number;
   reconnectCooldownSec: number;

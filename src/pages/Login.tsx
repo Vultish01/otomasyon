@@ -28,6 +28,12 @@ export default function Login() {
     clearAuthError();
   }, [mode, clearAuthError]);
 
+  useEffect(() => {
+    if (!registrationEnabled && mode === "register") {
+      setMode("login");
+    }
+  }, [mode, registrationEnabled]);
+
   if (currentUser) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -109,11 +115,19 @@ export default function Login() {
               <button
                 type="button"
                 onClick={() => setMode("register")}
-                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${mode === "register" ? "bg-sky-400 text-slate-950" : "text-slate-300"}`}
+                disabled={!registrationEnabled}
+                className={`rounded-xl px-4 py-3 text-sm font-medium transition ${mode === "register" ? "bg-sky-400 text-slate-950" : "text-slate-300"} disabled:cursor-not-allowed disabled:text-slate-500`}
               >
                 Kayit ol
               </button>
             </div>
+
+            {!registrationEnabled ? (
+              <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                Yeni kayit kapali. Bu panelde sadece ilk yonetici hesabi aciktan olusturulur; sonrasi mevcut
+                hesapla giris yapar.
+              </div>
+            ) : null}
 
             {authError ? (
               <div className="mt-6 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">

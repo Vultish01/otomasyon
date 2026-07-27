@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import time
+import urllib.request
+from typing import Optional
 
 from worker.automation import (
     close_target_processes,
@@ -15,8 +18,46 @@ from worker.config import WorkerConfig, load_worker_config, merge_worker_config,
 from worker.state_machine import RuntimeSignal, WorkerState, next_state
 
 
+# #region debug-point C:runner-report
+def _debug_report(hypothesis_id: str, location: str, msg: str, data: Optional[dict] = None) -> None:
+    env_path = ".dbg/remote-command-control.env"
+    debug_url = "http://127.0.0.1:7777/event"
+    session_id = "remote-command-control"
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_url = line.split("=", 1)[1] or debug_url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1] or session_id
+    except Exception:
+        pass
+
+    try:
+        payload = {
+            "sessionId": session_id,
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": f"[DEBUG] {msg}",
+            "data": data or {},
+        }
+        request = urllib.request.Request(
+            debug_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=1).read()
+    except Exception:
+        pass
+
+
+# #endregion
+
+
 def sync_remote_config(client: ControlCenterClient, config: WorkerConfig, config_path: str | None = None) -> WorkerConfig:
-    remote_payload = client.fetch_worker_config(config.device_id)
+    remote_payload = client.fetch_worker_config(config.device_id, config.worker_token, config.machine_key)
     updated_config = merge_worker_config(config, remote_payload)
     if updated_config != config:
         save_worker_config(updated_config, config_path)
@@ -59,27 +100,72 @@ def execute_command(client: ControlCenterClient, config: WorkerConfig, command: 
 
 def process_pending_commands(client: ControlCenterClient, config: WorkerConfig) -> None:
     try:
-        commands = client.fetch_commands(config.device_id)
-    except Exception:
+        commands = client.fetch_commands(config.device_id, config.worker_token)
+    except Exception as exc:
+        # #region debug-point A:fetch-failed
+        _debug_report(
+            "A",
+            "worker/runner.py:process_pending_commands",
+            "Worker komutlari cekemedi.",
+            {"device_id": config.device_id, "error": str(exc), "has_worker_token": bool(config.worker_token)},
+        )
+        # #endregion
         return
 
     for command in commands:
         status = "completed"
         note = None
         try:
+            # #region debug-point C:execute-start
+            _debug_report(
+                "C",
+                "worker/runner.py:process_pending_commands",
+                "Worker komut calistirmaya basliyor.",
+                {"device_id": config.device_id, "command_id": command["id"], "command_type": command["command_type"]},
+            )
+            # #endregion
             status, note = execute_command(client, config, command)
         except Exception as exc:
             status = "failed"
             note = str(exc)
+            # #region debug-point C:execute-error
+            _debug_report(
+                "C",
+                "worker/runner.py:process_pending_commands",
+                "Worker komut execute adiminda hata verdi.",
+                {
+                    "device_id": config.device_id,
+                    "command_id": command["id"],
+                    "command_type": command["command_type"],
+                    "error": str(exc),
+                },
+            )
+            # #endregion
 
         try:
-            client.acknowledge_command(command["id"], status, note)
+            client.acknowledge_command(command["id"], config.worker_token, status, note)
         except Exception:
             pass
+
+        # #region debug-point C:execute-result
+        _debug_report(
+            "C",
+            "worker/runner.py:process_pending_commands",
+            "Worker komutu sonuclandirdi.",
+            {
+                "device_id": config.device_id,
+                "command_id": command["id"],
+                "command_type": command["command_type"],
+                "status": status,
+                "note": note,
+            },
+        )
+        # #endregion
 
         try:
             client.send_event(
                 config.device_id,
+                config.worker_token,
                 "success" if status == "completed" else "error",
                 f"command_{command['command_type']}",
                 note or f"{command['command_type']} komutu tamamlandi.",
@@ -105,6 +191,7 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
             if launched > 0:
                 client.send_event(
                     config.device_id,
+                    config.worker_token,
                     "info",
                     "process_started",
                     f"{launched} eksik pencere icin yeni EXE sureci baslatildi.",
@@ -116,6 +203,7 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
             if login_result.completed_profiles > 0:
                 client.send_event(
                     config.device_id,
+                    config.worker_token,
                     "success",
                     "login_completed",
                     f"{login_result.completed_profiles} pencere icin login tamamlandi.",
@@ -139,6 +227,7 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
 
         client.send_heartbeat(
             device_id=config.device_id,
+            worker_token=config.worker_token,
             automation_state=state.value,
             active_windows=inspection.active_windows,
             internet_reachable=signal.internet_reachable,
@@ -146,11 +235,29 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
         )
 
         if state == WorkerState.RELAUNCHING:
-            client.send_event(config.device_id, "warning", "restart_started", "EXE yeniden baslatma akisi tetiklendi.")
+            client.send_event(
+                config.device_id,
+                config.worker_token,
+                "warning",
+                "restart_started",
+                "EXE yeniden baslatma akisi tetiklendi.",
+            )
         elif state == WorkerState.LOGGING_IN:
-            client.send_event(config.device_id, "info", "login_started", "Kayitli akisa gore login basladi.")
+            client.send_event(
+                config.device_id,
+                config.worker_token,
+                "info",
+                "login_started",
+                "Kayitli akisa gore login basladi.",
+            )
         elif state == WorkerState.POSITIONING:
-            client.send_event(config.device_id, "success", "positioning", "Pencereler Win32 API ile hizalaniyor.")
+            client.send_event(
+                config.device_id,
+                config.worker_token,
+                "success",
+                "positioning",
+                "Pencereler Win32 API ile hizalaniyor.",
+            )
 
         time.sleep(config.health_check_interval_sec)
 

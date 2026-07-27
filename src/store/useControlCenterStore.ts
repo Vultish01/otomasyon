@@ -9,6 +9,7 @@ import type {
   WorkerConfigPayload,
 } from "@shared/types";
 import {
+  deleteDevice as deleteDeviceRequest,
   fetchDeviceDetail,
   fetchDevices,
   fetchLogs,
@@ -38,6 +39,7 @@ type ControlCenterState = {
   saveDeviceConfig: (config: DeviceConfig) => Promise<void>;
   registerNewDevice: (payload: DeviceRegistrationRequest) => Promise<string>;
   loadWorkerConfig: (deviceId: string) => Promise<void>;
+  deleteDevice: (deviceId: string) => Promise<void>;
 };
 
 function buildAuditEntry(action: string, target: string): AuditEntry {
@@ -67,8 +69,26 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
     set({ isLoadingDevices: true, lastSyncError: undefined });
     try {
       const [devices, events] = await Promise.all([fetchDevices(), fetchLogs()]);
+      const detailResults = await Promise.allSettled(
+        devices.map(async (device) => {
+          const { config } = await fetchDeviceDetail(device.id);
+          return [device.id, config] as const;
+        }),
+      );
+      const configs = Object.fromEntries(
+        detailResults
+          .filter(
+            (result): result is PromiseFulfilledResult<readonly [string, DeviceConfig]> =>
+              result.status === "fulfilled",
+          )
+          .map((result) => result.value),
+      );
       set({
         devices,
+        configs: {
+          ...get().configs,
+          ...configs,
+        },
         events: events.slice(0, 16),
         isLoadingDevices: false,
       });
@@ -180,6 +200,30 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
       set({
         lastSyncError: error instanceof Error ? error.message : "Worker config alinamadi.",
       });
+    }
+  },
+  deleteDevice: async (deviceId) => {
+    set({ lastSyncError: undefined });
+    try {
+      await deleteDeviceRequest(deviceId);
+      set((state) => {
+        const nextConfigs = { ...state.configs };
+        const nextWorkerConfigs = { ...state.workerConfigByDeviceId };
+        delete nextConfigs[deviceId];
+        delete nextWorkerConfigs[deviceId];
+        return {
+          devices: state.devices.filter((device) => device.id !== deviceId),
+          configs: nextConfigs,
+          workerConfigByDeviceId: nextWorkerConfigs,
+          selectedDeviceId: state.selectedDeviceId === deviceId ? "" : state.selectedDeviceId,
+          auditTrail: [buildAuditEntry("Cihaz silindi", deviceId), ...state.auditTrail].slice(0, 16),
+        };
+      });
+    } catch (error) {
+      set({
+        lastSyncError: error instanceof Error ? error.message : "Cihaz silinemedi.",
+      });
+      throw error;
     }
   },
 }));

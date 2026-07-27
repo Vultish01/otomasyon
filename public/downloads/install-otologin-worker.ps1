@@ -172,6 +172,7 @@ $workerConfig = @{
     api_base_url = $registrationResponse.worker_config.api_base_url
     device_id = $registrationResponse.worker_config.device_id
     machine_key = $registrationResponse.worker_config.machine_key
+    worker_token = $registrationResponse.worker_config.worker_token
     window_count = $registrationResponse.worker_config.window_count
     health_check_interval_sec = $registrationResponse.worker_config.health_check_interval_sec
     reconnect_cooldown_sec = $registrationResponse.worker_config.reconnect_cooldown_sec

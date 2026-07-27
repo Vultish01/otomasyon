@@ -108,6 +108,8 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS devices (
               id TEXT PRIMARY KEY,
               machine_key TEXT,
+              owner_user_id TEXT,
+              worker_token TEXT,
               name TEXT NOT NULL,
               os_version TEXT NOT NULL,
               online INTEGER NOT NULL DEFAULT 1,
@@ -169,10 +171,15 @@ def initialize_database() -> None:
         for statement in statements:
             execute(connection, statement)
         ensure_column(connection, "devices", "machine_key", "TEXT")
+        ensure_column(connection, "devices", "owner_user_id", "TEXT")
+        ensure_column(connection, "devices", "worker_token", "TEXT")
         ensure_column(connection, "device_configs", "automation_rules", "TEXT NOT NULL DEFAULT '{}'")
         execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_machine_key ON devices(machine_key)")
+        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_worker_token ON devices(worker_token)")
+        execute(connection, "CREATE INDEX IF NOT EXISTS idx_devices_owner_user_id ON devices(owner_user_id)")
         execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
         execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token)")
+        backfill_device_security_defaults(connection)
 
     remove_demo_seed_data()
 
@@ -227,6 +234,39 @@ def _hash_password(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 120000).hex()
 
 
+def generate_worker_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def get_default_owner_user_id(connection) -> str | None:
+    row = execute(
+        connection,
+        "SELECT id FROM users ORDER BY created_at ASC LIMIT 1",
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def backfill_device_security_defaults(connection) -> None:
+    default_owner_user_id = get_default_owner_user_id(connection)
+    device_rows = execute(connection, "SELECT id, owner_user_id, worker_token FROM devices").fetchall()
+
+    for row in device_rows:
+        updates: list[str] = []
+        params: list[str] = []
+
+        if not row.get("worker_token"):
+            updates.append("worker_token = ?")
+            params.append(generate_worker_token())
+
+        if default_owner_user_id and not row.get("owner_user_id"):
+            updates.append("owner_user_id = ?")
+            params.append(default_owner_user_id)
+
+        if updates:
+            params.append(row["id"])
+            execute(connection, f"UPDATE devices SET {', '.join(updates)} WHERE id = ?", tuple(params))
+
+
 def count_users() -> int:
     with get_connection() as connection:
         return int(execute(connection, "SELECT COUNT(*) AS total FROM users").fetchone()["total"])
@@ -253,6 +293,11 @@ def create_user(name: str, email: str, password: str) -> AuthUser:
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (user_id, name.strip(), normalized_email, _hash_password(password, salt), salt, created_at),
+        )
+        execute(
+            connection,
+            "UPDATE devices SET owner_user_id = ? WHERE owner_user_id IS NULL OR owner_user_id = ''",
+            (user_id,),
         )
 
     return get_user_by_id(user_id)
@@ -342,9 +387,16 @@ def revoke_session(session_token: str) -> None:
         )
 
 
-def list_devices() -> list[DeviceStatus]:
+def list_devices(owner_user_id: str | None = None) -> list[DeviceStatus]:
     with get_connection() as connection:
-        rows = execute(connection, "SELECT * FROM devices ORDER BY name").fetchall()
+        if owner_user_id:
+            rows = execute(
+                connection,
+                "SELECT * FROM devices WHERE owner_user_id = ? ORDER BY name",
+                (owner_user_id,),
+            ).fetchall()
+        else:
+            rows = execute(connection, "SELECT * FROM devices ORDER BY name").fetchall()
     return [
         DeviceStatus(
             **{
@@ -358,9 +410,16 @@ def list_devices() -> list[DeviceStatus]:
     ]
 
 
-def get_device(device_id: str) -> DeviceStatus | None:
+def get_device(device_id: str, owner_user_id: str | None = None) -> DeviceStatus | None:
     with get_connection() as connection:
-        row = execute(connection, "SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+        if owner_user_id:
+            row = execute(
+                connection,
+                "SELECT * FROM devices WHERE id = ? AND owner_user_id = ?",
+                (device_id, owner_user_id),
+            ).fetchone()
+        else:
+            row = execute(connection, "SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
     if not row:
         return None
     return DeviceStatus(
@@ -373,13 +432,25 @@ def get_device(device_id: str) -> DeviceStatus | None:
     )
 
 
-def get_device_config(device_id: str) -> DeviceConfig | None:
+def get_device_config(device_id: str, owner_user_id: str | None = None) -> DeviceConfig | None:
     with get_connection() as connection:
-        config_row = execute(
-            connection,
-            "SELECT * FROM device_configs WHERE device_id = ?",
-            (device_id,),
-        ).fetchone()
+        if owner_user_id:
+            config_row = execute(
+                connection,
+                """
+                SELECT c.*
+                FROM device_configs c
+                JOIN devices d ON d.id = c.device_id
+                WHERE c.device_id = ? AND d.owner_user_id = ?
+                """,
+                (device_id, owner_user_id),
+            ).fetchone()
+        else:
+            config_row = execute(
+                connection,
+                "SELECT * FROM device_configs WHERE device_id = ?",
+                (device_id,),
+            ).fetchone()
         if not config_row:
             return None
         profile_rows = execute(
@@ -466,28 +537,36 @@ def create_device(
     health_check_interval_sec: int,
     reconnect_cooldown_sec: int,
     launch_args: list[str] | None = None,
+    owner_user_id: str | None = None,
 ) -> tuple[DeviceStatus, DeviceConfig]:
     launch_args = launch_args or []
 
     with get_connection() as connection:
+        effective_owner_user_id = owner_user_id or get_default_owner_user_id(connection)
         existing = None
         if machine_key:
             existing = execute(
                 connection,
-                "SELECT id FROM devices WHERE machine_key = ?",
+                "SELECT id, owner_user_id, worker_token FROM devices WHERE machine_key = ?",
                 (machine_key,),
             ).fetchone()
 
         if existing:
             device_id = existing["id"]
+            current_owner_user_id = existing.get("owner_user_id")
+            if owner_user_id and current_owner_user_id and current_owner_user_id != owner_user_id:
+                raise ValueError("Bu cihaz baska bir hesaba bagli.")
+
+            worker_token = existing.get("worker_token") or generate_worker_token()
+            next_owner_user_id = current_owner_user_id or effective_owner_user_id
             execute(
                 connection,
                 """
                 UPDATE devices
-                SET machine_key = ?, name = ?, os_version = ?, exe_path = ?
+                SET machine_key = ?, owner_user_id = ?, worker_token = ?, name = ?, os_version = ?, exe_path = ?
                 WHERE id = ?
                 """,
-                (machine_key, name, os_version, exe_path, device_id),
+                (machine_key, next_owner_user_id, worker_token, name, os_version, exe_path, device_id),
             )
             execute(
                 connection,
@@ -516,16 +595,19 @@ def create_device(
         else:
             safe_name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "win-device"
             device_id = f"{safe_name[:20]}-{uuid.uuid4().hex[:6]}"
+            worker_token = generate_worker_token()
             execute(
                 connection,
                 """
                 INSERT INTO devices
-                (id, machine_key, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, machine_key, owner_user_id, worker_token, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     device_id,
                     machine_key,
+                    effective_owner_user_id,
+                    worker_token,
                     name,
                     os_version,
                     0,
@@ -569,13 +651,14 @@ def build_worker_config_payload(api_base_url: str, config: DeviceConfig) -> Work
     with get_connection() as connection:
         machine_key_row = execute(
             connection,
-            "SELECT machine_key FROM devices WHERE id = ?",
+            "SELECT machine_key, worker_token FROM devices WHERE id = ?",
             (config.device_id,),
         ).fetchone()
     return WorkerConfigPayload(
         api_base_url=api_base_url.rstrip("/"),
         device_id=config.device_id,
         machine_key=machine_key_row["machine_key"] if machine_key_row else None,
+        worker_token=machine_key_row["worker_token"] if machine_key_row else None,
         window_count=config.window_count,
         health_check_interval_sec=config.health_check_interval_sec,
         reconnect_cooldown_sec=config.reconnect_cooldown_sec,
@@ -614,13 +697,27 @@ def add_event(device_id: str, level: str, event_type: str, message: str) -> Devi
     return event
 
 
-def list_events(limit: int = 50) -> list[DeviceEvent]:
+def list_events(limit: int = 50, owner_user_id: str | None = None) -> list[DeviceEvent]:
     with get_connection() as connection:
-        rows = execute(
-            connection,
-            "SELECT * FROM device_events ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if owner_user_id:
+            rows = execute(
+                connection,
+                """
+                SELECT e.*
+                FROM device_events e
+                JOIN devices d ON d.id = e.device_id
+                WHERE d.owner_user_id = ?
+                ORDER BY e.created_at DESC
+                LIMIT ?
+                """,
+                (owner_user_id, limit),
+            ).fetchall()
+        else:
+            rows = execute(
+                connection,
+                "SELECT * FROM device_events ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [DeviceEvent(**{**row, "created_at": datetime.fromisoformat(row["created_at"])}) for row in rows]
 
 
@@ -714,3 +811,36 @@ def acknowledge_command(command_id: str, status: str, note: str | None = None) -
             """,
             (status, note, utc_now(), command_id),
         )
+
+
+def delete_device(device_id: str) -> None:
+    with get_connection() as connection:
+        execute(connection, "DELETE FROM window_profiles WHERE device_id = ?", (device_id,))
+        execute(connection, "DELETE FROM device_events WHERE device_id = ?", (device_id,))
+        execute(connection, "DELETE FROM device_commands WHERE device_id = ?", (device_id,))
+        execute(connection, "DELETE FROM device_configs WHERE device_id = ?", (device_id,))
+        execute(connection, "DELETE FROM devices WHERE id = ?", (device_id,))
+
+
+def get_worker_token(device_id: str) -> str | None:
+    with get_connection() as connection:
+        row = execute(connection, "SELECT worker_token FROM devices WHERE id = ?", (device_id,)).fetchone()
+    if not row:
+        return None
+    return row["worker_token"]
+
+
+def get_device_machine_key(device_id: str) -> str | None:
+    with get_connection() as connection:
+        row = execute(connection, "SELECT machine_key FROM devices WHERE id = ?", (device_id,)).fetchone()
+    if not row:
+        return None
+    return row["machine_key"]
+
+
+def get_command_device_id(command_id: str) -> str | None:
+    with get_connection() as connection:
+        row = execute(connection, "SELECT device_id FROM device_commands WHERE id = ?", (command_id,)).fetchone()
+    if not row:
+        return None
+    return row["device_id"]

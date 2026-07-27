@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import ntpath
 import os
 import socket
 import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 try:
@@ -42,6 +44,44 @@ except ImportError:  # pragma: no cover
     win32con = None
     win32gui = None
     win32process = None
+
+
+# #region debug-point B:automation-report
+def _debug_report(hypothesis_id: str, location: str, msg: str, data: Optional[dict] = None) -> None:
+    env_path = ".dbg/remote-command-control.env"
+    debug_url = "http://127.0.0.1:7777/event"
+    session_id = "remote-command-control"
+    try:
+        with open(env_path, "r", encoding="utf-8") as env_file:
+            for raw_line in env_file:
+                line = raw_line.strip()
+                if line.startswith("DEBUG_SERVER_URL="):
+                    debug_url = line.split("=", 1)[1] or debug_url
+                elif line.startswith("DEBUG_SESSION_ID="):
+                    session_id = line.split("=", 1)[1] or session_id
+    except Exception:
+        pass
+
+    try:
+        payload = {
+            "sessionId": session_id,
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": f"[DEBUG] {msg}",
+            "data": data or {},
+        }
+        request = urllib.request.Request(
+            debug_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(request, timeout=1).read()
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 @dataclass
@@ -96,12 +136,26 @@ def check_connectivity(api_base_url: str, timeout_sec: float = 2.0) -> bool:
     host = parsed.hostname
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if not host:
+        # #region debug-point B:connectivity-missing-host
+        _debug_report("B", "worker/automation.py:check_connectivity", "API host parse edilemedi.", {"api_base_url": api_base_url})
+        # #endregion
         return False
 
     try:
         with socket.create_connection((host, port), timeout=timeout_sec):
+            # #region debug-point B:connectivity-ok
+            _debug_report("B", "worker/automation.py:check_connectivity", "Socket baglantisi basarili.", {"host": host, "port": port})
+            # #endregion
             return True
-    except OSError:
+    except OSError as exc:
+        # #region debug-point B:connectivity-failed
+        _debug_report(
+            "B",
+            "worker/automation.py:check_connectivity",
+            "Socket baglantisi basarisiz.",
+            {"host": host, "port": port, "error": str(exc), "api_base_url": api_base_url},
+        )
+        # #endregion
         return False
 
 
@@ -427,6 +481,24 @@ def inspect_runtime(config: WorkerConfig) -> RuntimeInspection:
 
     positioning_required = internet_reachable and active_windows > 0 and active_windows != config.window_count
     logout_detected = login_visible and active_windows > 0 and not success_visible
+
+    # #region debug-point E:inspect-runtime
+    _debug_report(
+        "E",
+        "worker/automation.py:inspect_runtime",
+        "Runtime inspection tamamlandi.",
+        {
+            "device_id": config.device_id,
+            "internet_reachable": internet_reachable,
+            "process_count": process_count,
+            "active_windows": active_windows,
+            "login_visible": login_visible,
+            "success_visible": success_visible,
+            "positioning_required": positioning_required,
+            "logout_detected": logout_detected,
+        },
+    )
+    # #endregion
 
     return RuntimeInspection(
         internet_reachable=internet_reachable,

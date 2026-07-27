@@ -21,11 +21,13 @@ const initialRegistrationForm: DeviceRegistrationRequest = {
 export default function Dashboard() {
   const navigate = useNavigate();
   const devices = useControlCenterStore((state) => state.devices);
+  const configs = useControlCenterStore((state) => state.configs);
   const events = useControlCenterStore((state) => state.events);
   const runCommand = useControlCenterStore((state) => state.runCommand);
   const runBulkRelogin = useControlCenterStore((state) => state.runBulkRelogin);
   const loadDashboardData = useControlCenterStore((state) => state.loadDashboardData);
   const registerNewDevice = useControlCenterStore((state) => state.registerNewDevice);
+  const deleteDevice = useControlCenterStore((state) => state.deleteDevice);
   const isLoadingDevices = useControlCenterStore((state) => state.isLoadingDevices);
   const isRegisteringDevice = useControlCenterStore((state) => state.isRegisteringDevice);
   const lastSyncError = useControlCenterStore((state) => state.lastSyncError);
@@ -65,6 +67,20 @@ export default function Dashboard() {
       const deviceId = await registerNewDevice(registrationForm);
       setRegistrationForm(initialRegistrationForm);
       navigate(`/devices/${deviceId}`);
+    } catch {
+      return;
+    }
+  }
+
+  async function handleDeleteDevice(device: DeviceStatus) {
+    const confirmed = window.confirm(
+      `${device.name} cihazini panelden kaldirmak istiyor musun? Bu islem loglari ve komut gecmisini de siler.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      await deleteDevice(device.id);
     } catch {
       return;
     }
@@ -300,7 +316,14 @@ export default function Dashboard() {
                 <DeviceCard
                   key={device.id}
                   device={device}
+                  config={configs[device.id]}
                   onRunCommand={(deviceId, command) => void runCommand(deviceId, command)}
+                  onDelete={(deviceId) => {
+                    const target = devices.find((item) => item.id === deviceId);
+                    if (target) {
+                      void handleDeleteDevice(target);
+                    }
+                  }}
                 />
               ))
             ) : (

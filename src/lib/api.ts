@@ -83,6 +83,7 @@ type ApiWorkerConfigPayload = {
   api_base_url: string;
   device_id: string;
   machine_key?: string;
+  worker_token?: string;
   window_count: number;
   health_check_interval_sec: number;
   reconnect_cooldown_sec: number;
@@ -249,6 +250,7 @@ function mapWorkerConfig(item: ApiWorkerConfigPayload): WorkerConfigPayload {
     apiBaseUrl: item.api_base_url,
     deviceId: item.device_id,
     machineKey: item.machine_key,
+    workerToken: item.worker_token,
     windowCount: item.window_count,
     healthCheckIntervalSec: item.health_check_interval_sec,
     reconnectCooldownSec: item.reconnect_cooldown_sec,
@@ -423,4 +425,10 @@ export async function registerDevice(payload: DeviceRegistrationRequest) {
 export async function fetchWorkerConfig(deviceId: string) {
   const payload = await apiFetch<ApiWorkerConfigPayload>(`/api/devices/${deviceId}/worker-config`);
   return mapWorkerConfig(payload);
+}
+
+export async function deleteDevice(deviceId: string) {
+  return apiFetch<{ status: string }>(`/api/devices/${deviceId}`, {
+    method: "DELETE",
+  });
 }

@@ -53,6 +53,7 @@ class WorkerConfig:
     api_base_url: str = "http://127.0.0.1:8000"
     device_id: str = ""
     machine_key: str | None = None
+    worker_token: str | None = None
     window_count: int = 4
     health_check_interval_sec: int = 5
     reconnect_cooldown_sec: int = 15
@@ -82,6 +83,7 @@ def load_worker_config(config_path: str | None = None) -> WorkerConfig:
         api_base_url=payload.get("api_base_url", "http://127.0.0.1:8000"),
         device_id=payload.get("device_id", ""),
         machine_key=payload.get("machine_key"),
+        worker_token=payload.get("worker_token"),
         window_count=payload.get("window_count", 4),
         health_check_interval_sec=payload.get("health_check_interval_sec", 5),
         reconnect_cooldown_sec=payload.get("reconnect_cooldown_sec", 15),
@@ -105,6 +107,7 @@ def save_worker_config(config: WorkerConfig, config_path: str | None = None) -> 
                 "api_base_url": config.api_base_url,
                 "device_id": config.device_id,
                 "machine_key": config.machine_key,
+                "worker_token": config.worker_token,
                 "window_count": config.window_count,
                 "health_check_interval_sec": config.health_check_interval_sec,
                 "reconnect_cooldown_sec": config.reconnect_cooldown_sec,
@@ -126,6 +129,7 @@ def merge_worker_config(current: WorkerConfig, remote_payload: dict) -> WorkerCo
         api_base_url=remote_payload.get("api_base_url", current.api_base_url),
         device_id=remote_payload.get("device_id", current.device_id),
         machine_key=remote_payload.get("machine_key", current.machine_key),
+        worker_token=remote_payload.get("worker_token", current.worker_token),
         window_count=remote_payload.get("window_count", current.window_count),
         health_check_interval_sec=remote_payload.get("health_check_interval_sec", current.health_check_interval_sec),
         reconnect_cooldown_sec=remote_payload.get("reconnect_cooldown_sec", current.reconnect_cooldown_sec),

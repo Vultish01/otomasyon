@@ -128,6 +128,7 @@ class WorkerConfigPayload(BaseModel):
     api_base_url: str
     device_id: str
     machine_key: Optional[str] = None
+    worker_token: Optional[str] = None
     window_count: int = 4
     health_check_interval_sec: int
     reconnect_cooldown_sec: int
