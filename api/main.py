@@ -302,6 +302,12 @@ def reposition(device_id: str, request: CommandRequest, _: AuthUser = Depends(re
     return build_command_response(device_id, "reposition")
 
 
+@app.post("/api/devices/{device_id}/commands/start_exe")
+def start_exe(device_id: str, request: CommandRequest, _: AuthUser = Depends(require_panel_device)) -> CommandResponse:
+    _ = request
+    return build_command_response(device_id, "start_exe")
+
+
 @app.post("/api/devices/{device_id}/commands/restart-all")
 def restart_all(device_id: str, request: CommandRequest, _: AuthUser = Depends(require_panel_device)) -> CommandResponse:
     _ = request

@@ -307,6 +307,34 @@ def test_device_delete_removes_owned_device():
     assert list_response.json() == []
 
 
+def test_start_exe_command_endpoint_queues_command():
+    headers = auth_headers()
+    register_response = client.post(
+        "/api/devices/register",
+        headers=headers,
+        json={
+            "machine_key": f"machine-start-{uuid.uuid4().hex[:6]}",
+            "name": "Start PC",
+            "os_version": "Windows 11 Pro",
+            "exe_path": r"C:\Apps\Test\broker.exe",
+            "window_count": 1,
+            "health_check_interval_sec": 6,
+            "reconnect_cooldown_sec": 18,
+            "launch_args": [],
+        },
+    )
+    device_id = register_response.json()["device"]["id"]
+
+    response = client.post(
+        f"/api/devices/{device_id}/commands/start_exe",
+        headers=headers,
+        json={"payload": {}},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+
+
 def test_claim_device_assigns_hidden_device_to_current_user():
     first_headers = auth_headers()
     other_user = create_user("Other User", f"other-claim-{uuid.uuid4().hex[:8]}@example.com", "12345678")

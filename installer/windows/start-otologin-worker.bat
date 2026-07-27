@@ -18,3 +18,15 @@ if not exist "worker-config.json" (
 
 echo OtoLogin Worker baslatiliyor...
 call ".venv\Scripts\python.exe" "worker\runner.py" >> "worker-console.log" 2>&1
+set "EXIT_CODE=%ERRORLEVEL%"
+
+echo.
+if not "%EXIT_CODE%"=="0" (
+  echo Worker beklenmedik sekilde kapandi. Exit code: %EXIT_CODE%
+  echo Loglari kontrol et:
+  echo - worker-console.log
+  echo - worker-runtime.log
+  pause
+)
+
+exit /b %EXIT_CODE%
