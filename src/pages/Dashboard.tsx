@@ -265,7 +265,7 @@ export default function Dashboard() {
               Sadece cihaz karti olustur
             </button>
             <a
-              href="/downloads/otologin-windows-worker.zip?v=20260727-3"
+              href="/downloads/otologin-windows-worker.zip?v=20260727-4"
               download
               className="inline-flex items-center gap-2 rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/5"
             >

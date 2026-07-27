@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$installerVersion = "2026.07.27.3"
+$installerVersion = "2026.07.27.4"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptRoot
@@ -152,28 +152,7 @@ try {
     $env:OTOLOGIN_REGISTRATION_API = "$apiBaseUrl/api/devices/register"
     $env:OTOLOGIN_REGISTRATION_BODY = $registrationBody
 
-    $registrationResponseJson = & ".\.venv\Scripts\python.exe" -c @"
-import json
-import os
-import sys
-
-import httpx
-
-url = os.environ["OTOLOGIN_REGISTRATION_API"]
-payload = json.loads(os.environ["OTOLOGIN_REGISTRATION_BODY"])
-
-try:
-    response = httpx.post(url, json=payload, timeout=60.0)
-except Exception as exc:
-    sys.stderr.write("Baglanti hatasi: %s\n" % exc)
-    sys.exit(1)
-
-if response.is_error:
-    sys.stderr.write("HTTP %s: %s\n" % (response.status_code, response.text))
-    sys.exit(1)
-
-print(response.text)
-"@ 2>&1
+    $registrationResponseJson = & ".\.venv\Scripts\python.exe" ".\register-device.py" 2>&1
 
     if ($LASTEXITCODE -ne 0) {
         throw "$registrationResponseJson"
