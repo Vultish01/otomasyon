@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
+from pathlib import Path
 import time
+import traceback
 import urllib.request
 from typing import Optional
 
@@ -54,6 +57,37 @@ def _debug_report(hypothesis_id: str, location: str, msg: str, data: Optional[di
 
 
 # #endregion
+
+
+def configure_worker_logger(config_path: str | None = None) -> logging.Logger:
+    log_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "worker-runtime.log"
+
+    logger = logging.getLogger("otologin.worker")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    return logger
+
+
+def safe_send_event(
+    client: ControlCenterClient,
+    config: WorkerConfig,
+    logger: logging.Logger,
+    level: str,
+    event_type: str,
+    message: str,
+) -> None:
+    try:
+        client.send_event(config.device_id, config.worker_token, level, event_type, message)
+    except Exception:
+        logger.warning("Worker event gonderilemedi: %s", event_type, exc_info=True)
 
 
 def sync_remote_config(client: ControlCenterClient, config: WorkerConfig, config_path: str | None = None) -> WorkerConfig:
@@ -176,92 +210,110 @@ def process_pending_commands(client: ControlCenterClient, config: WorkerConfig) 
 
 def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
     client = ControlCenterClient(config.api_base_url)
+    logger = configure_worker_logger(config_path)
+    logger.info("Worker basladi. device_id=%s api=%s", config.device_id, config.api_base_url)
     state = WorkerState.CHECKING
 
     while True:
         try:
             config = sync_remote_config(client, config, config_path)
         except Exception:
-            pass
+            logger.warning("Remote config cekilemedi.", exc_info=True)
 
-        process_pending_commands(client, config)
-        inspection = inspect_runtime(config)
-        if inspection.internet_reachable and inspection.process_count < config.window_count:
-            launched = start_missing_processes(config, inspection.process_count)
-            if launched > 0:
-                client.send_event(
-                    config.device_id,
-                    config.worker_token,
+        try:
+            process_pending_commands(client, config)
+            inspection = inspect_runtime(config)
+            if inspection.internet_reachable and inspection.process_count < config.window_count:
+                launched = start_missing_processes(config, inspection.process_count)
+                if launched > 0:
+                    safe_send_event(
+                        client,
+                        config,
+                        logger,
+                        "info",
+                        "process_started",
+                        f"{launched} eksik pencere icin yeni EXE sureci baslatildi.",
+                    )
+                    inspection = inspect_runtime(config)
+
+            if inspection.internet_reachable and inspection.logout_detected:
+                login_result = perform_login_workflow(config)
+                if login_result.completed_profiles > 0:
+                    safe_send_event(
+                        client,
+                        config,
+                        logger,
+                        "success",
+                        "login_completed",
+                        f"{login_result.completed_profiles} pencere icin login tamamlandi.",
+                    )
+                    inspection = inspect_runtime(config)
+                elif login_result.note:
+                    inspection.last_error = login_result.note
+
+            if inspection.internet_reachable and inspection.positioning_required and inspection.active_windows > 0:
+                positioned = reposition_windows(config.exe_path, min(config.window_count, inspection.active_windows))
+                if positioned:
+                    inspection.positioning_required = False
+
+            signal = RuntimeSignal(
+                internet_reachable=inspection.internet_reachable,
+                logout_detected=inspection.logout_detected,
+                login_screen_visible=inspection.login_screen_visible,
+                positioning_required=inspection.positioning_required,
+            )
+            state = next_state(state, signal)
+
+            try:
+                client.send_heartbeat(
+                    device_id=config.device_id,
+                    worker_token=config.worker_token,
+                    automation_state=state.value,
+                    active_windows=inspection.active_windows,
+                    internet_reachable=signal.internet_reachable,
+                    last_error=inspection.last_error if signal.internet_reachable else "Internet yok",
+                )
+            except Exception:
+                logger.warning("Heartbeat gonderilemedi.", exc_info=True)
+
+            if state == WorkerState.RELAUNCHING:
+                safe_send_event(
+                    client,
+                    config,
+                    logger,
+                    "warning",
+                    "restart_started",
+                    "EXE yeniden baslatma akisi tetiklendi.",
+                )
+            elif state == WorkerState.LOGGING_IN:
+                safe_send_event(
+                    client,
+                    config,
+                    logger,
                     "info",
-                    "process_started",
-                    f"{launched} eksik pencere icin yeni EXE sureci baslatildi.",
+                    "login_started",
+                    "Kayitli akisa gore login basladi.",
                 )
-                inspection = inspect_runtime(config)
-
-        if inspection.internet_reachable and inspection.logout_detected:
-            login_result = perform_login_workflow(config)
-            if login_result.completed_profiles > 0:
-                client.send_event(
-                    config.device_id,
-                    config.worker_token,
+            elif state == WorkerState.POSITIONING:
+                safe_send_event(
+                    client,
+                    config,
+                    logger,
                     "success",
-                    "login_completed",
-                    f"{login_result.completed_profiles} pencere icin login tamamlandi.",
+                    "positioning",
+                    "Pencereler Win32 API ile hizalaniyor.",
                 )
-                inspection = inspect_runtime(config)
-            elif login_result.note:
-                inspection.last_error = login_result.note
+        except Exception:
+            logger.error("Worker dongusu beklenmeyen hata aldi.\n%s", traceback.format_exc())
 
-        if inspection.internet_reachable and inspection.positioning_required and inspection.active_windows > 0:
-            positioned = reposition_windows(config.exe_path, min(config.window_count, inspection.active_windows))
-            if positioned:
-                inspection.positioning_required = False
-
-        signal = RuntimeSignal(
-            internet_reachable=inspection.internet_reachable,
-            logout_detected=inspection.logout_detected,
-            login_screen_visible=inspection.login_screen_visible,
-            positioning_required=inspection.positioning_required,
-        )
-        state = next_state(state, signal)
-
-        client.send_heartbeat(
-            device_id=config.device_id,
-            worker_token=config.worker_token,
-            automation_state=state.value,
-            active_windows=inspection.active_windows,
-            internet_reachable=signal.internet_reachable,
-            last_error=inspection.last_error if signal.internet_reachable else "Internet yok",
-        )
-
-        if state == WorkerState.RELAUNCHING:
-            client.send_event(
-                config.device_id,
-                config.worker_token,
-                "warning",
-                "restart_started",
-                "EXE yeniden baslatma akisi tetiklendi.",
-            )
-        elif state == WorkerState.LOGGING_IN:
-            client.send_event(
-                config.device_id,
-                config.worker_token,
-                "info",
-                "login_started",
-                "Kayitli akisa gore login basladi.",
-            )
-        elif state == WorkerState.POSITIONING:
-            client.send_event(
-                config.device_id,
-                config.worker_token,
-                "success",
-                "positioning",
-                "Pencereler Win32 API ile hizalaniyor.",
-            )
-
-        time.sleep(config.health_check_interval_sec)
+        time.sleep(max(config.health_check_interval_sec, 2))
 
 
 if __name__ == "__main__":
     config_path = str(resolve_worker_config_path())
-    run_loop(load_worker_config(config_path), config_path)
+    logger = configure_worker_logger(config_path)
+    try:
+        run_loop(load_worker_config(config_path), config_path)
+    except Exception:
+        logger.error("Worker baslangicinda kritik hata.\n%s", traceback.format_exc())
+        raise

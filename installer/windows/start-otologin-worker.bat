@@ -17,4 +17,4 @@ if not exist "worker-config.json" (
 )
 
 echo OtoLogin Worker baslatiliyor...
-call ".venv\Scripts\python.exe" "worker\runner.py"
+call ".venv\Scripts\python.exe" "worker\runner.py" >> "worker-console.log" 2>&1
