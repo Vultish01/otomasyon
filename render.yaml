@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: otologin-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-api.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        value: https://otologin-panel.onrender.com
+    healthCheckPath: /api/health
+
+  - type: static_site
+    name: otologin-panel
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://otologin-api.onrender.com

@@ -1,0 +1,8 @@
+{
+  "api_base_url": "https://panel-adresin.example.com",
+  "device_id": "win-floor-01",
+  "health_check_interval_sec": 5,
+  "reconnect_cooldown_sec": 15,
+  "exe_path": "C:\\Program Files\\Uygulama\\app.exe",
+  "launch_args": []
+}
