@@ -26,6 +26,8 @@ type ControlCenterState = {
   events: DeviceEvent[];
   auditTrail: AuditEntry[];
   selectedDeviceId: string;
+  lastDashboardSyncAt?: string;
+  lastDeviceSyncAtById: Record<string, string>;
   isLoadingDevices: boolean;
   isLoadingDeviceDetail: boolean;
   isSavingConfig: boolean;
@@ -60,6 +62,8 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
   events: [],
   auditTrail: [],
   selectedDeviceId: "",
+  lastDashboardSyncAt: undefined,
+  lastDeviceSyncAtById: {},
   isLoadingDevices: false,
   isLoadingDeviceDetail: false,
   isSavingConfig: false,
@@ -92,6 +96,7 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
           ...configs,
         },
         events: events.slice(0, 16),
+        lastDashboardSyncAt: new Date().toISOString(),
         isLoadingDevices: false,
       });
     } catch (error) {
@@ -112,6 +117,10 @@ export const useControlCenterStore = create<ControlCenterState>((set, get) => ({
         configs: {
           ...state.configs,
           [deviceId]: config,
+        },
+        lastDeviceSyncAtById: {
+          ...state.lastDeviceSyncAtById,
+          [deviceId]: new Date().toISOString(),
         },
         selectedDeviceId: deviceId,
         isLoadingDeviceDetail: false,

@@ -18,6 +18,8 @@ const initialRegistrationForm: DeviceRegistrationRequest = {
   launchArgs: [],
 };
 
+const DASHBOARD_POLL_INTERVAL_MS = 15000;
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const devices = useControlCenterStore((state) => state.devices);
@@ -31,6 +33,7 @@ export default function Dashboard() {
   const deleteDevice = useControlCenterStore((state) => state.deleteDevice);
   const isLoadingDevices = useControlCenterStore((state) => state.isLoadingDevices);
   const isRegisteringDevice = useControlCenterStore((state) => state.isRegisteringDevice);
+  const lastDashboardSyncAt = useControlCenterStore((state) => state.lastDashboardSyncAt);
   const lastSyncError = useControlCenterStore((state) => state.lastSyncError);
 
   const [registrationForm, setRegistrationForm] = useState<DeviceRegistrationRequest>(initialRegistrationForm);
@@ -38,6 +41,24 @@ export default function Dashboard() {
 
   useEffect(() => {
     void loadDashboardData();
+  }, [loadDashboardData]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadDashboardData();
+    }, DASHBOARD_POLL_INTERVAL_MS);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void loadDashboardData();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [loadDashboardData]);
 
   const summaryItems = useMemo(
@@ -369,8 +390,20 @@ export default function Dashboard() {
           eyebrow="Canli cihazlar"
           title="Windows makineler ve otomasyon durumu"
           action={
-            <div className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
-              {isLoadingDevices ? "Yukleniyor..." : `Son yenileme: ${formatDate(new Date().toISOString())}`}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void loadDashboardData()}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-300 transition hover:bg-white/5"
+              >
+                <RefreshCcw className="h-3.5 w-3.5" />
+                Simdi yenile
+              </button>
+              <div className="rounded-full border border-white/10 px-4 py-2 text-xs uppercase tracking-[0.2em] text-slate-300">
+                {isLoadingDevices
+                  ? "Yukleniyor..."
+                  : `Son yenileme: ${formatDate(lastDashboardSyncAt ?? new Date().toISOString())}`}
+              </div>
             </div>
           }
         >

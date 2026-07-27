@@ -30,6 +30,8 @@ function parseKeywordInput(value: string) {
     .filter(Boolean);
 }
 
+const DEVICE_DETAIL_POLL_INTERVAL_MS = 15000;
+
 export default function DeviceDetails() {
   const { deviceId } = useParams();
   const devices = useControlCenterStore((state) => state.devices);
@@ -57,6 +59,30 @@ export default function DeviceDetails() {
     }
     void loadDeviceDetail(deviceId);
     void loadWorkerConfig(deviceId);
+  }, [deviceId, loadDeviceDetail, loadWorkerConfig]);
+
+  useEffect(() => {
+    if (!deviceId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void loadDeviceDetail(deviceId);
+      void loadWorkerConfig(deviceId);
+    }, DEVICE_DETAIL_POLL_INTERVAL_MS);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void loadDeviceDetail(deviceId);
+        void loadWorkerConfig(deviceId);
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [deviceId, loadDeviceDetail, loadWorkerConfig]);
 
   useEffect(() => {
@@ -351,8 +377,8 @@ export default function DeviceDetails() {
                 className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-left transition hover:bg-white/[0.05]"
               >
                 <div>
-                  <div className="text-sm font-medium text-white">Relogin baslat</div>
-                  <div className="mt-1 text-xs text-slate-400">Logout tespiti beklemeden giris akisina gecilir.</div>
+                  <div className="text-sm font-medium text-white">Login testini baslat</div>
+                  <div className="mt-1 text-xs text-slate-400">EXE yeniden acilir ve login alanlarini doldurma akisi zorla tetiklenir.</div>
                 </div>
                 <RefreshCcw className="h-4 w-4 text-sky-200" />
               </button>
