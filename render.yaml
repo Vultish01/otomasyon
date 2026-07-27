@@ -1,3 +1,6 @@
+previews:
+  generation: automatic
+
 services:
   - type: web
     name: otologin-api
@@ -12,11 +15,11 @@ services:
         value: https://otologin-panel.onrender.com
     healthCheckPath: /api/health
 
-  - type: static_site
+  - type: web
     name: otologin-panel
+    runtime: static
     buildCommand: npm install && npm run build
     staticPublishPath: dist
-    pullRequestPreviewsEnabled: true
     envVars:
       - key: VITE_API_BASE_URL
         value: https://otologin-api.onrender.com
