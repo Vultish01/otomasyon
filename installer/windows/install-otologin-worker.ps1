@@ -22,6 +22,62 @@ function Ensure-WingetPackage {
     winget install -e --id $PackageId --accept-package-agreements --accept-source-agreements
 }
 
+function Read-ValueOrDefault {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Prompt,
+        [string]$DefaultValue = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DefaultValue)) {
+        $value = Read-Host $Prompt
+    }
+    else {
+        $value = Read-Host "$Prompt [$DefaultValue]"
+    }
+
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $DefaultValue
+    }
+
+    return $value.Trim()
+}
+
+function ConvertTo-StringArray {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        return @()
+    }
+
+    if ($Value -is [System.Array]) {
+        return @($Value | ForEach-Object { "$_" })
+    }
+
+    if ([string]::IsNullOrWhiteSpace("$Value")) {
+        return @()
+    }
+
+    return @("$Value")
+}
+
+function Get-OrCreateMachineKey {
+    param([string]$IdentityPath)
+
+    if (Test-Path $IdentityPath) {
+        $identity = Get-Content $IdentityPath -Raw | ConvertFrom-Json
+        if (-not [string]::IsNullOrWhiteSpace($identity.machine_key)) {
+            return $identity.machine_key
+        }
+    }
+
+    $machineKey = [guid]::NewGuid().ToString()
+    @{
+        machine_key = $machineKey
+    } | ConvertTo-Json | Set-Content -Path $IdentityPath -Encoding UTF8
+    return $machineKey
+}
+
 $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
 if (-not $pythonCommand) {
     Ensure-WingetPackage -PackageId "Python.Python.3.11" -Label "Python 3.11"
@@ -50,9 +106,65 @@ if (-not (Test-Path ".venv")) {
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade setuptools wheel
 & ".\.venv\Scripts\pip.exe" install -r ".\requirements-worker.txt"
 
-if (-not (Test-Path ".\worker-config.json")) {
-    Copy-Item ".\worker-config.template.json" ".\worker-config.json"
+$configPath = Join-Path $scriptRoot "worker-config.json"
+$templatePath = Join-Path $scriptRoot "worker-config.template.json"
+$identityPath = Join-Path $scriptRoot "machine-identity.json"
+
+if (-not (Test-Path $configPath)) {
+    Copy-Item $templatePath $configPath
 }
+
+$config = Get-Content $configPath -Raw | ConvertFrom-Json
+$machineKey = Get-OrCreateMachineKey -IdentityPath $identityPath
+$computerName = $env:COMPUTERNAME
+$osCaption = (Get-CimInstance Win32_OperatingSystem).Caption
+
+$apiBaseUrl = Read-ValueOrDefault -Prompt "API adresi" -DefaultValue $config.api_base_url
+$apiBaseUrl = $apiBaseUrl.TrimEnd("/")
+$exePath = Read-ValueOrDefault -Prompt "Bu bilgisayardaki EXE yolu" -DefaultValue $config.exe_path
+$windowCount = [int](Read-ValueOrDefault -Prompt "Baslangic pencere sayisi" -DefaultValue "$($config.window_count)")
+$healthCheck = [int](Read-ValueOrDefault -Prompt "Kontrol araligi (sn)" -DefaultValue "$($config.health_check_interval_sec)")
+$cooldown = [int](Read-ValueOrDefault -Prompt "Reconnect cooldown (sn)" -DefaultValue "$($config.reconnect_cooldown_sec)")
+$launchArgsInput = Read-ValueOrDefault -Prompt "Launch argumanlari (bos birakilabilir)" -DefaultValue ((ConvertTo-StringArray $config.launch_args) -join " ")
+$launchArgs = if ([string]::IsNullOrWhiteSpace($launchArgsInput)) { @() } else { @($launchArgsInput -split "\s+") }
+
+Write-Host ""
+Write-Host "Cihaz web paneline kaydediliyor..." -ForegroundColor Cyan
+
+$registrationBody = @{
+    machine_key = $machineKey
+    name = $computerName
+    os_version = $osCaption
+    exe_path = $exePath
+    window_count = $windowCount
+    health_check_interval_sec = $healthCheck
+    reconnect_cooldown_sec = $cooldown
+    launch_args = $launchArgs
+} | ConvertTo-Json -Depth 5
+
+try {
+    $registrationResponse = Invoke-RestMethod `
+        -Method Post `
+        -Uri "$apiBaseUrl/api/devices/register" `
+        -ContentType "application/json" `
+        -Body $registrationBody
+}
+catch {
+    throw "Cihaz kaydi basarisiz oldu. API erisimi ve adresini kontrol edin. $_"
+}
+
+$workerConfig = @{
+    api_base_url = $registrationResponse.worker_config.api_base_url
+    device_id = $registrationResponse.worker_config.device_id
+    machine_key = $registrationResponse.worker_config.machine_key
+    window_count = $registrationResponse.worker_config.window_count
+    health_check_interval_sec = $registrationResponse.worker_config.health_check_interval_sec
+    reconnect_cooldown_sec = $registrationResponse.worker_config.reconnect_cooldown_sec
+    exe_path = $registrationResponse.worker_config.exe_path
+    launch_args = @(ConvertTo-StringArray $registrationResponse.worker_config.launch_args)
+}
+
+$workerConfig | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding UTF8
 
 $startupBatPath = Join-Path $scriptRoot "start-otologin-worker.bat"
 $startupFolder = [Environment]::GetFolderPath("Startup")
@@ -65,6 +177,8 @@ $shortcut.Save()
 
 Write-Host ""
 Write-Host "Kurulum tamamlandi." -ForegroundColor Green
-Write-Host "1) worker-config.json icindeki api_base_url, device_id ve exe_path alanlarini duzenleyin." -ForegroundColor White
-Write-Host "2) Ardindan start-otologin-worker.bat dosyasini calistirin." -ForegroundColor White
-Write-Host "3) Ayrica Windows acilisinda otomatik baslamasi icin Startup kisayolu da olusturuldu." -ForegroundColor White
+Write-Host "Cihaz kimligi: $($registrationResponse.device.id)" -ForegroundColor White
+Write-Host "worker-config.json otomatik yazildi ve Startup kisayolu olusturuldu." -ForegroundColor White
+Write-Host "Simdi worker baslatiliyor..." -ForegroundColor White
+
+Start-Process -FilePath $startupBatPath -WorkingDirectory $scriptRoot

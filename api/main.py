@@ -66,6 +66,7 @@ def get_devices():
 @app.post("/api/devices/register", response_model=DeviceRegistrationResponse)
 def register_device(payload: DeviceRegistrationRequest, request: Request) -> DeviceRegistrationResponse:
     device, config = create_device(
+        machine_key=payload.machine_key,
         name=payload.name,
         os_version=payload.os_version,
         exe_path=payload.exe_path,

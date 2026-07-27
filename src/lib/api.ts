@@ -56,6 +56,8 @@ type ApiDeviceEvent = {
 type ApiWorkerConfigPayload = {
   api_base_url: string;
   device_id: string;
+  machine_key?: string;
+  window_count: number;
   health_check_interval_sec: number;
   reconnect_cooldown_sec: number;
   exe_path: string;
@@ -118,6 +120,8 @@ function mapWorkerConfig(item: ApiWorkerConfigPayload): WorkerConfigPayload {
   return {
     apiBaseUrl: item.api_base_url,
     deviceId: item.device_id,
+    machineKey: item.machine_key,
+    windowCount: item.window_count,
     healthCheckIntervalSec: item.health_check_interval_sec,
     reconnectCooldownSec: item.reconnect_cooldown_sec,
     exePath: item.exe_path,
@@ -204,6 +208,7 @@ export async function registerDevice(payload: DeviceRegistrationRequest) {
     method: "POST",
     body: JSON.stringify({
       name: payload.name,
+      machine_key: payload.machineKey,
       os_version: payload.osVersion,
       exe_path: payload.exePath,
       window_count: payload.windowCount,

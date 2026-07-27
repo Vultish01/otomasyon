@@ -2,11 +2,12 @@ OtoLogin Windows Worker Kurulumu
 
 1. Bu klasoru zip icinden cikarin.
 2. install-otologin-worker.bat dosyasina cift tiklayin.
-3. Kurulum bitince worker-config.json dosyasini acin.
-4. api_base_url, device_id ve exe_path alanlarini doldurun.
-5. start-otologin-worker.bat dosyasi ile worker'i baslatin.
+3. Kurulum sirasi geldiginde API adresini ve bu bilgisayardaki EXE yolunu girin.
+4. Script cihazi panele otomatik kaydeder, worker-config.json dosyasini doldurur ve worker'i baslatir.
+5. Sonraki ayarlari panelden degistirebilirsiniz.
 
 Notlar:
 - Python yoksa kurulum scripti winget ile Python 3.11 kurmayi dener.
-- worker-config.json cihaz bazli ayarlar icindir.
+- worker-config.json kurulum sonunda otomatik uretilir.
+- Ayni bilgisayara tekrar kurulum yapildiginda machine_key ile mevcut cihaz kaydi guncellenir.
 - Gercek Windows otomasyonu sonraki adimda pywinauto ve Win32 entegrasyonu ile tamamlanacaktir.

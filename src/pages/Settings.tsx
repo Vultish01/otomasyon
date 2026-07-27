@@ -26,11 +26,11 @@ const securityItems = [
 ];
 
 const setupSteps = [
-  "Panelde once yeni cihaz kaydi olustur ve worker-config.json dosyasini indir.",
   "Windows makineden paneldeki ZIP paketini indir.",
   "ZIP'i cikartip icindeki install-otologin-worker.bat dosyasini calistir.",
-  "Indirdigin worker-config.json dosyasini paket klasorune koy.",
-  "start-otologin-worker.bat ile worker'i baslat.",
+  "API adresini ve bu bilgisayardaki EXE yolunu gir.",
+  "Script cihazi panele otomatik kaydeder ve worker-config.json dosyasini doldurur.",
+  "Kurulum bitince worker otomatik baslar; sonraki ayarlari panelden yonetirsin.",
 ];
 
 const downloadItems = [
@@ -50,7 +50,7 @@ const downloadItems = [
   },
   {
     title: "Config Sablonu",
-    description: "Her Windows makine icin duzenlenebilecek worker-config.json sablonu.",
+    description: "Otomatik kurulumda referans alinan worker-config.json sablonu.",
     href: "/downloads/worker-config.template.json",
     actionLabel: "JSON indir",
     icon: Download,

@@ -135,6 +135,8 @@ export default function DeviceDetails() {
     downloadJson(`worker-config-${deviceId}.json`, {
       api_base_url: workerConfig.apiBaseUrl,
       device_id: workerConfig.deviceId,
+      machine_key: workerConfig.machineKey,
+      window_count: workerConfig.windowCount,
       health_check_interval_sec: workerConfig.healthCheckIntervalSec,
       reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
       exe_path: workerConfig.exePath,

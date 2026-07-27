@@ -57,16 +57,19 @@ Windows tarafinda hedef akis:
 1. Panelden `otologin-windows-worker.zip` dosyasini indir.
 2. ZIP'i cikar.
 3. `install-otologin-worker.bat` dosyasini calistir.
-4. `worker-config.json` icine API adresini, cihaz kimligini ve EXE yolunu yaz.
-5. `start-otologin-worker.bat` ile worker'i baslat.
+4. Kurulum sirasinda API adresini ve bu bilgisayardaki EXE yolunu gir.
+5. Script cihaz adini ve Windows surumunu otomatik okuyup web API'ye gonderir.
+6. API kaydi tamamlaninca `worker-config.json` otomatik yazilir ve worker baslatilir.
 
 Kurulum scripti su isleri otomatik yapar:
 
 - Python yoksa `winget` ile Python 3.11 kurmaya calisir
 - `pip`, `setuptools`, `wheel` gunceller
 - `requirements-worker.txt` icindeki eksik Python paketlerini kurar
-- `worker-config.json` dosyasini olusturur
+- makineye ait kalici `machine_key` uretir ve tekrar kurulumlarda ayni cihaz kaydini gunceller
+- `worker-config.json` dosyasini web API'den gelen verilerle olusturur
 - Windows acilisinda otomatik baslamasi icin Startup kisayolu ekler
+- kurulumu bitirince worker'i otomatik baslatir
 
 ## Canli yayin
 

@@ -41,6 +41,7 @@ def initialize_database() -> None:
             """
             CREATE TABLE IF NOT EXISTS devices (
               id TEXT PRIMARY KEY,
+              machine_key TEXT,
               name TEXT NOT NULL,
               os_version TEXT NOT NULL,
               online INTEGER NOT NULL DEFAULT 1,
@@ -83,8 +84,19 @@ def initialize_database() -> None:
             );
             """
         )
+        ensure_column(connection, "devices", "machine_key", "TEXT")
+        connection.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_machine_key ON devices(machine_key)"
+        )
 
     seed_database()
+
+
+def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_definition: str) -> None:
+    columns = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    column_names = {row["name"] for row in columns}
+    if column_name not in column_names:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
 def seed_database() -> None:
@@ -270,7 +282,7 @@ def list_devices() -> list[DeviceStatus]:
     return [
         DeviceStatus(
             **{
-                **row,
+                **{key: value for key, value in row.items() if key != "machine_key"},
                 "online": bool(row["online"]),
                 "internet_reachable": bool(row["internet_reachable"]),
                 "last_heartbeat_at": datetime.fromisoformat(row["last_heartbeat_at"]),
@@ -287,7 +299,7 @@ def get_device(device_id: str) -> DeviceStatus | None:
         return None
     return DeviceStatus(
         **{
-            **row,
+            **{key: value for key, value in row.items() if key != "machine_key"},
             "online": bool(row["online"]),
             "internet_reachable": bool(row["internet_reachable"]),
             "last_heartbeat_at": datetime.fromisoformat(row["last_heartbeat_at"]),
@@ -360,6 +372,7 @@ def update_device_config(device_id: str, config: DeviceConfig) -> None:
 
 
 def create_device(
+    machine_key: str | None,
     name: str,
     os_version: str,
     exe_path: str,
@@ -368,75 +381,107 @@ def create_device(
     reconnect_cooldown_sec: int,
     launch_args: list[str] | None = None,
 ) -> tuple[DeviceStatus, DeviceConfig]:
-    safe_name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "win-device"
-    device_id = f"{safe_name[:20]}-{uuid.uuid4().hex[:6]}"
     launch_args = launch_args or []
 
-    device = DeviceStatus(
-        id=device_id,
-        name=name,
-        os_version=os_version,
-        online=False,
-        internet_reachable=False,
-        last_heartbeat_at=datetime.now(timezone.utc),
-        automation_state="idle",
-        active_windows=0,
-        exe_path=exe_path,
-        retries_today=0,
-    )
-    config = DeviceConfig(
-        device_id=device_id,
-        exe_path=exe_path,
-        launch_args=launch_args,
-        window_count=window_count,
-        health_check_interval_sec=health_check_interval_sec,
-        reconnect_cooldown_sec=reconnect_cooldown_sec,
-        profiles=[],
-    )
-
     with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO devices
-            (id, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                device.id,
-                device.name,
-                device.os_version,
-                int(device.online),
-                int(device.internet_reachable),
-                device.last_heartbeat_at.isoformat(),
-                device.automation_state,
-                device.last_error,
-                device.active_windows,
-                device.exe_path,
-                device.retries_today,
-            ),
-        )
-        connection.execute(
-            """
-            INSERT INTO device_configs
-            (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                config.device_id,
-                config.exe_path,
-                json.dumps(config.launch_args),
-                config.window_count,
-                config.health_check_interval_sec,
-                config.reconnect_cooldown_sec,
-            ),
-        )
+        existing = None
+        if machine_key:
+            existing = connection.execute(
+                "SELECT id FROM devices WHERE machine_key = ?",
+                (machine_key,),
+            ).fetchone()
+
+        if existing:
+            device_id = existing["id"]
+            connection.execute(
+                """
+                UPDATE devices
+                SET machine_key = ?, name = ?, os_version = ?, exe_path = ?
+                WHERE id = ?
+                """,
+                (machine_key, name, os_version, exe_path, device_id),
+            )
+            connection.execute(
+                """
+                INSERT INTO device_configs
+                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(device_id) DO UPDATE SET
+                  exe_path = excluded.exe_path,
+                  launch_args = excluded.launch_args,
+                  window_count = excluded.window_count,
+                  health_check_interval_sec = excluded.health_check_interval_sec,
+                  reconnect_cooldown_sec = excluded.reconnect_cooldown_sec
+                """,
+                (
+                    device_id,
+                    exe_path,
+                    json.dumps(launch_args),
+                    window_count,
+                    health_check_interval_sec,
+                    reconnect_cooldown_sec,
+                ),
+            )
+        else:
+            safe_name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "win-device"
+            device_id = f"{safe_name[:20]}-{uuid.uuid4().hex[:6]}"
+            connection.execute(
+                """
+                INSERT INTO devices
+                (id, machine_key, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    device_id,
+                    machine_key,
+                    name,
+                    os_version,
+                    0,
+                    0,
+                    datetime.now(timezone.utc).isoformat(),
+                    "idle",
+                    None,
+                    0,
+                    exe_path,
+                    0,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO device_configs
+                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    device_id,
+                    exe_path,
+                    json.dumps(launch_args),
+                    window_count,
+                    health_check_interval_sec,
+                    reconnect_cooldown_sec,
+                ),
+            )
+
+    device = get_device(device_id)
+    config = get_device_config(device_id)
+    if not device or not config:
+        raise RuntimeError("Yeni cihaz kaydi olusturulamadi.")
+
     return device, config
 
 
 def build_worker_config_payload(api_base_url: str, config: DeviceConfig) -> WorkerConfigPayload:
+    machine_key_row = None
+    with get_connection() as connection:
+        machine_key_row = connection.execute(
+            "SELECT machine_key FROM devices WHERE id = ?",
+            (config.device_id,),
+        ).fetchone()
     return WorkerConfigPayload(
         api_base_url=api_base_url.rstrip("/"),
         device_id=config.device_id,
+        machine_key=machine_key_row["machine_key"] if machine_key_row else None,
+        window_count=config.window_count,
         health_check_interval_sec=config.health_check_interval_sec,
         reconnect_cooldown_sec=config.reconnect_cooldown_sec,
         exe_path=config.exe_path,

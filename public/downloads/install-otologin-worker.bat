@@ -13,5 +13,5 @@ if errorlevel 1 (
 )
 
 echo Kurulum tamamlandi.
-echo worker-config.json dosyasini duzenleyip start-otologin-worker.bat ile calistirabilirsin.
+echo Cihaz kaydi, config olusturma ve ilk baslatma tamamlandi.
 pause

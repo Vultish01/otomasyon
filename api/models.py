@@ -55,6 +55,7 @@ class DeviceStatus(BaseModel):
 
 
 class DeviceRegistrationRequest(BaseModel):
+    machine_key: Optional[str] = None
     name: str
     os_version: str
     exe_path: str
@@ -67,6 +68,8 @@ class DeviceRegistrationRequest(BaseModel):
 class WorkerConfigPayload(BaseModel):
     api_base_url: str
     device_id: str
+    machine_key: Optional[str] = None
+    window_count: int = 4
     health_check_interval_sec: int
     reconnect_cooldown_sec: int
     exe_path: str

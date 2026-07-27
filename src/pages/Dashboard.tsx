@@ -69,6 +69,8 @@ export default function Dashboard() {
         downloadJson(`worker-config-${deviceId}.json`, {
           api_base_url: workerConfig.apiBaseUrl,
           device_id: workerConfig.deviceId,
+          machine_key: workerConfig.machineKey,
+          window_count: workerConfig.windowCount,
           health_check_interval_sec: workerConfig.healthCheckIntervalSec,
           reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
           exe_path: workerConfig.exePath,
@@ -141,7 +143,7 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <SectionCard eyebrow="Yeni cihaz bagla" title="Panelden Windows worker kaydi olustur">
+        <SectionCard eyebrow="Opsiyonel manuel kayit" title="Istersen panelden de Windows worker kaydi olustur">
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-slate-200">Cihaz adi</span>
@@ -242,8 +244,8 @@ export default function Dashboard() {
               Kaydet ve worker config indir
             </button>
             <p className="text-sm leading-7 text-slate-400">
-              Kayit sonrasi cihaz detayina yonlendirileceksin ve indirilen `worker-config.json`
-              dosyasini Windows paketinin icine koyabileceksin.
+              Normal akista Windows kurulum paketi cihazi otomatik kaydeder. Bu alan ise manuel
+              onboarding veya test cihazlari icin yedek yol olarak kalir.
             </p>
           </div>
         </SectionCard>

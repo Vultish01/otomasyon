@@ -1,6 +1,6 @@
 import json
 
-from worker.config import WorkerConfig, load_worker_config
+from worker.config import WorkerConfig, load_worker_config, merge_worker_config, save_worker_config
 
 
 def test_load_worker_config_returns_defaults_for_missing_file(tmp_path):
@@ -16,6 +16,8 @@ def test_load_worker_config_reads_json_values(tmp_path):
             {
                 "api_base_url": "https://panel.example.com",
                 "device_id": "win-floor-09",
+                "machine_key": "machine-09",
+                "window_count": 3,
                 "health_check_interval_sec": 12,
                 "reconnect_cooldown_sec": 31,
                 "exe_path": r"D:\\Broker\\app.exe",
@@ -29,7 +31,49 @@ def test_load_worker_config_reads_json_values(tmp_path):
 
     assert config.api_base_url == "https://panel.example.com"
     assert config.device_id == "win-floor-09"
+    assert config.machine_key == "machine-09"
+    assert config.window_count == 3
     assert config.health_check_interval_sec == 12
     assert config.reconnect_cooldown_sec == 31
     assert config.exe_path == r"D:\\Broker\\app.exe"
     assert config.launch_args == ["--headless-check"]
+
+
+def test_merge_worker_config_applies_remote_values():
+    current = WorkerConfig(device_id="win-floor-01", window_count=4, exe_path=r"C:\\Apps\\broker.exe")
+    merged = merge_worker_config(
+        current,
+        {
+            "device_id": "win-floor-01",
+            "machine_key": "machine-01",
+            "window_count": 2,
+            "health_check_interval_sec": 9,
+            "reconnect_cooldown_sec": 20,
+            "exe_path": r"D:\\Updated\\broker.exe",
+            "launch_args": ["--demo"],
+        },
+    )
+
+    assert merged.machine_key == "machine-01"
+    assert merged.window_count == 2
+    assert merged.health_check_interval_sec == 9
+    assert merged.exe_path == r"D:\\Updated\\broker.exe"
+    assert merged.launch_args == ["--demo"]
+
+
+def test_save_worker_config_writes_new_fields(tmp_path):
+    config_path = tmp_path / "worker-config.json"
+    save_worker_config(
+        WorkerConfig(
+            api_base_url="https://panel.example.com",
+            device_id="win-floor-04",
+            machine_key="machine-04",
+            window_count=2,
+            exe_path=r"E:\\Broker\\app.exe",
+        ),
+        str(config_path),
+    )
+
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    assert payload["machine_key"] == "machine-04"
+    assert payload["window_count"] == 2

@@ -46,6 +46,8 @@ describe("useControlCenterStore", () => {
           worker_config: {
             api_base_url: "https://otologin-api.onrender.com",
             device_id: "yeni-pc-123abc",
+            machine_key: "machine-yeni-pc",
+            window_count: 4,
             health_check_interval_sec: 5,
             reconnect_cooldown_sec: 15,
             exe_path: "C:\\App\\broker.exe",
@@ -70,6 +72,7 @@ describe("useControlCenterStore", () => {
     expect(useControlCenterStore.getState().workerConfigByDeviceId[deviceId]?.apiBaseUrl).toBe(
       "https://otologin-api.onrender.com",
     );
+    expect(useControlCenterStore.getState().workerConfigByDeviceId[deviceId]?.windowCount).toBe(4);
   });
 
   it("konfigrasyon kaydinda config durumunu yeniler", async () => {
@@ -106,6 +109,8 @@ describe("useControlCenterStore", () => {
           mockJsonResponse({
             api_base_url: "https://otologin-api.onrender.com",
             device_id: "win-floor-01",
+            machine_key: "machine-win-floor-01",
+            window_count: 3,
             health_check_interval_sec: 8,
             reconnect_cooldown_sec: 20,
             exe_path: "E:\\Yeni\\broker.exe",

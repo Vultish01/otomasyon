@@ -71,6 +71,7 @@ export type DeviceConfig = {
 };
 
 export type DeviceRegistrationRequest = {
+  machineKey?: string;
   name: string;
   osVersion: string;
   exePath: string;
@@ -83,6 +84,8 @@ export type DeviceRegistrationRequest = {
 export type WorkerConfigPayload = {
   apiBaseUrl: string;
   deviceId: string;
+  machineKey?: string;
+  windowCount: number;
   healthCheckIntervalSec: number;
   reconnectCooldownSec: number;
   exePath: string;

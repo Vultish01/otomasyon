@@ -38,6 +38,7 @@ def test_device_registration_returns_worker_config():
     response = client.post(
         "/api/devices/register",
         json={
+            "machine_key": "machine-test-001",
             "name": "Test PC",
             "os_version": "Windows 11 Pro",
             "exe_path": r"C:\Apps\Test\broker.exe",
@@ -51,7 +52,42 @@ def test_device_registration_returns_worker_config():
     payload = response.json()
     assert payload["device"]["name"] == "Test PC"
     assert payload["worker_config"]["device_id"] == payload["device"]["id"]
+    assert payload["worker_config"]["machine_key"] == "machine-test-001"
+    assert payload["worker_config"]["window_count"] == 4
     assert payload["worker_config"]["launch_args"] == ["--demo"]
+
+
+def test_device_registration_reuses_existing_machine_key():
+    first = client.post(
+        "/api/devices/register",
+        json={
+            "machine_key": "machine-test-duplicate",
+            "name": "Test PC 02",
+            "os_version": "Windows 10 Pro",
+            "exe_path": r"C:\Apps\Test\broker.exe",
+            "window_count": 2,
+            "health_check_interval_sec": 5,
+            "reconnect_cooldown_sec": 15,
+            "launch_args": [],
+        },
+    )
+    second = client.post(
+        "/api/devices/register",
+        json={
+            "machine_key": "machine-test-duplicate",
+            "name": "Test PC 02 Updated",
+            "os_version": "Windows 11 Pro",
+            "exe_path": r"D:\Apps\Test\broker.exe",
+            "window_count": 3,
+            "health_check_interval_sec": 7,
+            "reconnect_cooldown_sec": 18,
+            "launch_args": ["--demo"],
+        },
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["device"]["id"] == second.json()["device"]["id"]
+    assert second.json()["config"]["window_count"] == 3
 
 
 def test_worker_config_endpoint_returns_device_payload():

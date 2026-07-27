@@ -1,6 +1,8 @@
 {
-  "api_base_url": "https://panel-adresin.example.com",
-  "device_id": "win-floor-01",
+  "api_base_url": "https://otologin-api.onrender.com",
+  "device_id": "",
+  "machine_key": null,
+  "window_count": 4,
   "health_check_interval_sec": 5,
   "reconnect_cooldown_sec": 15,
   "exe_path": "C:\\Program Files\\Uygulama\\app.exe",

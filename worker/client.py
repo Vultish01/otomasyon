@@ -39,3 +39,9 @@ class ControlCenterClient:
                     "message": message,
                 },
             ).raise_for_status()
+
+    def fetch_worker_config(self, device_id: str) -> dict:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(f"{self.api_base_url}/api/devices/{device_id}/worker-config")
+            response.raise_for_status()
+            return response.json()
