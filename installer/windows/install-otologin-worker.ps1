@@ -1,9 +1,11 @@
 $ErrorActionPreference = "Stop"
+$installerVersion = "2026.07.27.2"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptRoot
 
 Write-Host "OtoLogin Worker kurulumu basliyor..." -ForegroundColor Cyan
+Write-Host "Kurulum surumu: $installerVersion" -ForegroundColor DarkGray
 
 function Ensure-WingetPackage {
     param(
@@ -133,7 +135,7 @@ $launchArgs = if ([string]::IsNullOrWhiteSpace($launchArgsInput)) { @() } else {
 Write-Host ""
 Write-Host "Cihaz web paneline kaydediliyor..." -ForegroundColor Cyan
 
-$registrationBody = @{
+$registrationPayload = [ordered]@{
     machine_key = $machineKey
     name = $computerName
     os_version = $osCaption
@@ -141,18 +143,50 @@ $registrationBody = @{
     window_count = $windowCount
     health_check_interval_sec = $healthCheck
     reconnect_cooldown_sec = $cooldown
-    launch_args = $launchArgs
-} | ConvertTo-Json -Depth 5
+    launch_args = @(ConvertTo-StringArray $launchArgs)
+}
+
+$registrationBody = $registrationPayload | ConvertTo-Json -Depth 8 -Compress
 
 try {
-    $registrationResponse = Invoke-RestMethod `
-        -Method Post `
-        -Uri "$apiBaseUrl/api/devices/register" `
-        -ContentType "application/json" `
-        -Body $registrationBody
+    $env:OTOLOGIN_REGISTRATION_API = "$apiBaseUrl/api/devices/register"
+    $env:OTOLOGIN_REGISTRATION_BODY = $registrationBody
+
+    $registrationResponseJson = & ".\.venv\Scripts\python.exe" -c @"
+import json
+import os
+import sys
+
+import httpx
+
+url = os.environ["OTOLOGIN_REGISTRATION_API"]
+payload = json.loads(os.environ["OTOLOGIN_REGISTRATION_BODY"])
+
+try:
+    response = httpx.post(url, json=payload, timeout=60.0)
+except Exception as exc:
+    print(f"Baglanti hatasi: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if response.is_error:
+    print(f"HTTP {response.status_code}: {response.text}", file=sys.stderr)
+    sys.exit(1)
+
+print(response.text)
+"@ 2>&1
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "$registrationResponseJson"
+    }
+
+    $registrationResponse = $registrationResponseJson | ConvertFrom-Json
 }
 catch {
-    throw "Cihaz kaydi basarisiz oldu. API erisimi ve adresini kontrol edin. $_"
+    throw "Cihaz kaydi basarisiz oldu. API cevabi: $_"
+}
+finally {
+    Remove-Item Env:\OTOLOGIN_REGISTRATION_API -ErrorAction SilentlyContinue
+    Remove-Item Env:\OTOLOGIN_REGISTRATION_BODY -ErrorAction SilentlyContinue
 }
 
 $workerConfig = @{

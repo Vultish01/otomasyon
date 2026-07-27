@@ -16,7 +16,37 @@ AutomationState = Literal[
 ]
 WindowPosition = Literal["top_left", "top_right", "bottom_left", "bottom_right"]
 EventLevel = Literal["info", "warning", "error", "success"]
-CommandType = Literal["relogin", "restart_all", "reposition", "start_exe"]
+CommandType = Literal["relogin", "restart_all", "reposition", "start_exe", "run_helper"]
+HelperTriggerType = Literal["none", "hotkey", "click"]
+MouseButtonType = Literal["left", "right"]
+
+
+class AuthRegisterRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    email: str
+    password: str = Field(min_length=6, max_length=128)
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=6, max_length=128)
+
+
+class AuthUser(BaseModel):
+    id: str
+    name: str
+    email: str
+    created_at: datetime
+
+
+class AuthResponse(BaseModel):
+    user: AuthUser
+    session_token: str
+
+
+class AuthBootstrapStatus(BaseModel):
+    registration_enabled: bool = True
+    user_count: int = 0
 
 
 class WindowProfile(BaseModel):
@@ -30,6 +60,34 @@ class WindowProfile(BaseModel):
     last_action: str = "Beklemede"
 
 
+class HelperAutomation(BaseModel):
+    enabled: bool = False
+    program_path: str = ""
+    launch_args: list[str] = Field(default_factory=list)
+    trigger: HelperTriggerType = "none"
+    hotkey: str = ""
+    click_x: int = 0
+    click_y: int = 0
+    click_button: MouseButtonType = "left"
+    wait_after_launch_sec: int = 2
+
+
+class AutomationRules(BaseModel):
+    auto_login_enabled: bool = True
+    login_window_keywords: list[str] = Field(
+        default_factory=lambda: ["login", "giris", "sign in", "e-posta", "sifre"]
+    )
+    success_window_keywords: list[str] = Field(default_factory=list)
+    email_field_hints: list[str] = Field(default_factory=lambda: ["email", "e-posta", "kullanici"])
+    password_field_hints: list[str] = Field(default_factory=lambda: ["sifre", "password"])
+    submit_button_hints: list[str] = Field(default_factory=lambda: ["giris", "login", "sign in", "devam"])
+    relaunch_wait_sec: int = 4
+    post_login_wait_sec: int = 3
+    pre_login_hotkey_enabled: bool = False
+    pre_login_hotkey: str = ""
+    helper_automation: HelperAutomation = Field(default_factory=HelperAutomation)
+
+
 class DeviceConfig(BaseModel):
     device_id: str
     exe_path: str
@@ -37,6 +95,7 @@ class DeviceConfig(BaseModel):
     window_count: int = 4
     health_check_interval_sec: int = 5
     reconnect_cooldown_sec: int = 15
+    automation_rules: AutomationRules = Field(default_factory=AutomationRules)
     profiles: list[WindowProfile] = Field(default_factory=list)
 
 
@@ -74,6 +133,8 @@ class WorkerConfigPayload(BaseModel):
     reconnect_cooldown_sec: int
     exe_path: str
     launch_args: list[str] = Field(default_factory=list)
+    automation_rules: AutomationRules = Field(default_factory=AutomationRules)
+    profiles: list[WindowProfile] = Field(default_factory=list)
 
 
 class DeviceRegistrationResponse(BaseModel):
@@ -98,6 +159,19 @@ class CommandRequest(BaseModel):
 class CommandResponse(BaseModel):
     command_id: str
     status: str
+
+
+class WorkerCommand(BaseModel):
+    id: str
+    device_id: str
+    command_type: CommandType
+    payload: dict = Field(default_factory=dict)
+    created_at: datetime
+
+
+class WorkerCommandAck(BaseModel):
+    status: Literal["completed", "failed"] = "completed"
+    note: Optional[str] = None
 
 
 class WorkerHeartbeat(BaseModel):

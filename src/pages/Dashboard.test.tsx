@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("Dashboard", () => {
-  it("cihaz kartlarini ve toplu komut butonunu gosterir", async () => {
+  it("bos durumda kurulum yonlendirmesini gosterir", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("skip network")));
 
     render(
@@ -18,8 +18,6 @@ describe("Dashboard", () => {
     );
 
     expect(await screen.findByText("Tum cihazlarda relogin")).toBeInTheDocument();
-    expect(screen.getByText("Borsa PC 01")).toBeInTheDocument();
-    expect(screen.getByText("Borsa PC 02")).toBeInTheDocument();
-    expect(screen.getByText("Borsa PC 03")).toBeInTheDocument();
+    expect(screen.getByText(/Henuz bagli cihaz yok/i)).toBeInTheDocument();
   });
 });

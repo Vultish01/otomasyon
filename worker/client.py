@@ -45,3 +45,16 @@ class ControlCenterClient:
             response = client.get(f"{self.api_base_url}/api/devices/{device_id}/worker-config")
             response.raise_for_status()
             return response.json()
+
+    def fetch_commands(self, device_id: str) -> list[dict]:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(f"{self.api_base_url}/api/workers/{device_id}/commands")
+            response.raise_for_status()
+            return response.json()
+
+    def acknowledge_command(self, command_id: str, status: str, note: str | None = None) -> None:
+        with httpx.Client(timeout=10.0) as client:
+            client.post(
+                f"{self.api_base_url}/api/workers/commands/{command_id}/ack",
+                json={"status": status, "note": note},
+            ).raise_for_status()

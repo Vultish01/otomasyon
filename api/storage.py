@@ -1,18 +1,38 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import secrets
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from api.models import DeviceConfig, DeviceEvent, DeviceStatus, WindowProfile, WorkerConfigPayload
+from api.models import (
+    AuthUser,
+    AutomationRules,
+    DeviceConfig,
+    DeviceEvent,
+    DeviceStatus,
+    WindowProfile,
+    WorkerCommand,
+    WorkerConfigPayload,
+)
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # pragma: no cover
+    psycopg = None  # type: ignore
+    dict_row = None  # type: ignore
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = ROOT / "data"
+DATA_DIR = Path(os.getenv("OTOLOGIN_DATA_DIR", str(ROOT / "data"))).resolve()
 DB_PATH = DATA_DIR / "otologin.sqlite3"
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 
 def utc_now() -> str:
@@ -23,11 +43,37 @@ def dict_factory(cursor: sqlite3.Cursor, row: sqlite3.Row) -> dict:
     return {column[0]: row[index] for index, column in enumerate(cursor.description)}
 
 
+def is_postgres() -> bool:
+    return DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
+
+
+def adapt_query(query: str) -> str:
+    if not is_postgres():
+        return query
+    return query.replace("?", "%s")
+
+
+def execute(connection, query: str, params: tuple | list = ()):
+    return connection.execute(adapt_query(query), params)
+
+
+def executemany(connection, query: str, params_seq):
+    if is_postgres():
+        with connection.cursor() as cursor:
+            return cursor.executemany(adapt_query(query), params_seq)
+    return connection.executemany(adapt_query(query), params_seq)
+
+
 @contextmanager
 def get_connection():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = dict_factory
+    if is_postgres():
+        if psycopg is None:
+            raise RuntimeError("Postgres baglantisi icin psycopg kurulumu gerekli.")
+        connection = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    else:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(DB_PATH)
+        connection.row_factory = dict_factory
     try:
         yield connection
         connection.commit()
@@ -37,7 +83,27 @@ def get_connection():
 
 def initialize_database() -> None:
     with get_connection() as connection:
-        connection.executescript(
+        statements = [
+            """
+            CREATE TABLE IF NOT EXISTS users (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              email TEXT NOT NULL UNIQUE,
+              password_hash TEXT NOT NULL,
+              password_salt TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              last_login_at TEXT
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS user_sessions (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              session_token TEXT NOT NULL UNIQUE,
+              created_at TEXT NOT NULL,
+              revoked_at TEXT
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS devices (
               id TEXT PRIMARY KEY,
@@ -52,17 +118,20 @@ def initialize_database() -> None:
               active_windows INTEGER NOT NULL,
               exe_path TEXT NOT NULL,
               retries_today INTEGER NOT NULL DEFAULT 0
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS device_configs (
               device_id TEXT PRIMARY KEY,
               exe_path TEXT NOT NULL,
               launch_args TEXT NOT NULL,
               window_count INTEGER NOT NULL,
               health_check_interval_sec INTEGER NOT NULL,
-              reconnect_cooldown_sec INTEGER NOT NULL
-            );
-
+              reconnect_cooldown_sec INTEGER NOT NULL,
+              automation_rules TEXT NOT NULL DEFAULT '{}'
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS window_profiles (
               id TEXT PRIMARY KEY,
               device_id TEXT NOT NULL,
@@ -72,8 +141,9 @@ def initialize_database() -> None:
               post_login_choice TEXT,
               position TEXT NOT NULL,
               last_action TEXT NOT NULL
-            );
-
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS device_events (
               id TEXT PRIMARY KEY,
               device_id TEXT NOT NULL,
@@ -81,204 +151,200 @@ def initialize_database() -> None:
               event_type TEXT NOT NULL,
               message TEXT NOT NULL,
               created_at TEXT NOT NULL
-            );
+            )
+            """,
             """
-        )
+            CREATE TABLE IF NOT EXISTS device_commands (
+              id TEXT PRIMARY KEY,
+              device_id TEXT NOT NULL,
+              command_type TEXT NOT NULL,
+              payload TEXT NOT NULL,
+              status TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              acknowledged_at TEXT,
+              note TEXT
+            )
+            """,
+        ]
+        for statement in statements:
+            execute(connection, statement)
         ensure_column(connection, "devices", "machine_key", "TEXT")
-        connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_machine_key ON devices(machine_key)"
-        )
+        ensure_column(connection, "device_configs", "automation_rules", "TEXT NOT NULL DEFAULT '{}'")
+        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_machine_key ON devices(machine_key)")
+        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        execute(connection, "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token)")
 
-    seed_database()
+    remove_demo_seed_data()
 
 
-def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, column_definition: str) -> None:
-    columns = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+def ensure_column(connection, table_name: str, column_name: str, column_definition: str) -> None:
+    if is_postgres():
+        columns = execute(
+            connection,
+            """
+            SELECT column_name AS name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ? AND column_name = ?
+            """,
+            (table_name, column_name),
+        ).fetchall()
+    else:
+        columns = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     column_names = {row["name"] for row in columns}
     if column_name not in column_names:
-        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+        execute(connection, f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
-def seed_database() -> None:
+def serialize_automation_rules(rules: AutomationRules) -> str:
+    return json.dumps(rules.model_dump())
+
+
+def parse_automation_rules(raw: str | None) -> AutomationRules:
+    if not raw:
+        return AutomationRules()
+    return AutomationRules(**json.loads(raw))
+
+
+def remove_demo_seed_data() -> None:
+    demo_ids = ("win-floor-01", "win-floor-02", "win-floor-03")
     with get_connection() as connection:
-        current = connection.execute("SELECT COUNT(*) AS total FROM devices").fetchone()["total"]
-        if current:
-            return
-
-        devices = [
-            DeviceStatus(
-                id="win-floor-01",
-                name="Borsa PC 01",
-                os_version="Windows 11 Pro",
-                last_heartbeat_at=datetime.fromisoformat("2026-07-27T02:50:00+00:00"),
-                automation_state="idle",
-                active_windows=4,
-                exe_path=r"C:\Apps\BrokerDesk\broker.exe",
-                retries_today=1,
-            ),
-            DeviceStatus(
-                id="win-floor-02",
-                name="Borsa PC 02",
-                os_version="Windows 10 Pro",
-                internet_reachable=False,
-                last_heartbeat_at=datetime.fromisoformat("2026-07-27T02:47:00+00:00"),
-                automation_state="checking",
-                active_windows=2,
-                exe_path=r"D:\Trading\broker.exe",
-                retries_today=4,
-                last_error="Internet geri gelmedi, worker beklemede.",
-            ),
-            DeviceStatus(
-                id="win-floor-03",
-                name="Borsa PC 03",
-                os_version="Windows 10 Home",
-                last_heartbeat_at=datetime.fromisoformat("2026-07-27T02:49:10+00:00"),
-                automation_state="logging_in",
-                active_windows=3,
-                exe_path=r"C:\Legacy\broker.exe",
-                retries_today=2,
-            ),
-        ]
-
-        configs = [
-            DeviceConfig(
-                device_id="win-floor-01",
-                exe_path=r"C:\Apps\BrokerDesk\broker.exe",
-                profiles=[
-                    WindowProfile(
-                        id="wf01-p1",
-                        device_id="win-floor-01",
-                        slot=1,
-                        email="hesap-a@example.com",
-                        credential_id="cred-hesap-a",
-                        post_login_choice="Secenek A",
-                        position="top_left",
-                    ),
-                    WindowProfile(
-                        id="wf01-p2",
-                        device_id="win-floor-01",
-                        slot=2,
-                        email="hesap-a@example.com",
-                        credential_id="cred-hesap-a",
-                        post_login_choice="Secenek B",
-                        position="top_right",
-                        last_action="Secim ekrani dogrulandi",
-                    ),
-                    WindowProfile(
-                        id="wf01-p3",
-                        device_id="win-floor-01",
-                        slot=3,
-                        email="hesap-b@example.com",
-                        credential_id="cred-hesap-b",
-                        post_login_choice="Secenek A",
-                        position="bottom_left",
-                        last_action="Pencere hizalandi",
-                    ),
-                    WindowProfile(
-                        id="wf01-p4",
-                        device_id="win-floor-01",
-                        slot=4,
-                        email="hesap-b@example.com",
-                        credential_id="cred-hesap-b",
-                        post_login_choice="Secenek B",
-                        position="bottom_right",
-                    ),
-                ],
-            ),
-            DeviceConfig(
-                device_id="win-floor-02",
-                exe_path=r"D:\Trading\broker.exe",
-                health_check_interval_sec=10,
-                reconnect_cooldown_sec=25,
-            ),
-            DeviceConfig(
-                device_id="win-floor-03",
-                exe_path=r"C:\Legacy\broker.exe",
-                launch_args=["--legacy-render"],
-                health_check_interval_sec=8,
-                reconnect_cooldown_sec=20,
-            ),
-        ]
-
-        events = [
-            DeviceEvent(
-                id="evt-1",
-                device_id="win-floor-03",
-                level="warning",
-                event_type="logout_detected",
-                message="Pencere 3 ana ekran yerine login ekranina dustu.",
-                created_at=datetime.fromisoformat("2026-07-27T02:48:04+00:00"),
-            ),
-            DeviceEvent(
-                id="evt-2",
-                device_id="win-floor-03",
-                level="info",
-                event_type="restart_started",
-                message="Eski pencere kapatildi, EXE yeniden baslatildi.",
-                created_at=datetime.fromisoformat("2026-07-27T02:48:40+00:00"),
-            ),
-        ]
-
-        connection.executemany(
-            """
-            INSERT INTO devices
-            (id, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
-            VALUES (:id, :name, :os_version, :online, :internet_reachable, :last_heartbeat_at, :automation_state, :last_error, :active_windows, :exe_path, :retries_today)
-            """,
-            [
-                {
-                    **device.model_dump(),
-                    "online": int(device.online),
-                    "internet_reachable": int(device.internet_reachable),
-                    "last_heartbeat_at": device.last_heartbeat_at.isoformat(),
-                }
-                for device in devices
-            ],
+        executemany(connection, "DELETE FROM window_profiles WHERE device_id = ?", [(device_id,) for device_id in demo_ids])
+        executemany(connection, "DELETE FROM device_events WHERE device_id = ?", [(device_id,) for device_id in demo_ids])
+        executemany(connection, "DELETE FROM device_commands WHERE device_id = ?", [(device_id,) for device_id in demo_ids])
+        executemany(connection, "DELETE FROM device_configs WHERE device_id = ?", [(device_id,) for device_id in demo_ids])
+        executemany(
+            connection,
+            "DELETE FROM devices WHERE id = ? OR name = ?",
+            [(device_id, name) for device_id, name in zip(demo_ids, ("Borsa PC 01", "Borsa PC 02", "Borsa PC 03"))],
         )
 
-        connection.executemany(
+
+def _normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _hash_password(password: str, salt: str) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 120000).hex()
+
+
+def count_users() -> int:
+    with get_connection() as connection:
+        return int(execute(connection, "SELECT COUNT(*) AS total FROM users").fetchone()["total"])
+
+
+def create_user(name: str, email: str, password: str) -> AuthUser:
+    user_id = str(uuid.uuid4())
+    salt = secrets.token_hex(16)
+    normalized_email = _normalize_email(email)
+    created_at = utc_now()
+
+    with get_connection() as connection:
+        existing = execute(
+            connection,
+            "SELECT id FROM users WHERE email = ?",
+            (normalized_email,),
+        ).fetchone()
+        if existing:
+            raise ValueError("Bu e-posta ile kayitli bir hesap zaten var.")
+        execute(
+            connection,
             """
-            INSERT INTO device_configs
-            (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
-            VALUES (:device_id, :exe_path, :launch_args, :window_count, :health_check_interval_sec, :reconnect_cooldown_sec)
+            INSERT INTO users (id, name, email, password_hash, password_salt, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            [
-                {
-                    "device_id": config.device_id,
-                    "exe_path": config.exe_path,
-                    "launch_args": json.dumps(config.launch_args),
-                    "window_count": config.window_count,
-                    "health_check_interval_sec": config.health_check_interval_sec,
-                    "reconnect_cooldown_sec": config.reconnect_cooldown_sec,
-                }
-                for config in configs
-            ],
+            (user_id, name.strip(), normalized_email, _hash_password(password, salt), salt, created_at),
         )
 
-        for config in configs:
-            if not config.profiles:
-                continue
-            connection.executemany(
-                """
-                INSERT INTO window_profiles
-                (id, device_id, slot, email, credential_id, post_login_choice, position, last_action)
-                VALUES (:id, :device_id, :slot, :email, :credential_id, :post_login_choice, :position, :last_action)
-                """,
-                [profile.model_dump() for profile in config.profiles],
-            )
+    return get_user_by_id(user_id)
 
-        connection.executemany(
+
+def get_user_by_id(user_id: str) -> AuthUser | None:
+    with get_connection() as connection:
+        row = execute(
+            connection,
+            "SELECT id, name, email, created_at FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return AuthUser(
+        id=row["id"],
+        name=row["name"],
+        email=row["email"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def authenticate_user(email: str, password: str) -> AuthUser | None:
+    normalized_email = _normalize_email(email)
+    with get_connection() as connection:
+        row = execute(
+            connection,
+            "SELECT * FROM users WHERE email = ?",
+            (normalized_email,),
+        ).fetchone()
+        if not row:
+            return None
+        password_hash = _hash_password(password, row["password_salt"])
+        if password_hash != row["password_hash"]:
+            return None
+        execute(
+            connection,
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (utc_now(), row["id"]),
+        )
+    return get_user_by_id(row["id"])
+
+
+def create_user_session(user_id: str) -> str:
+    session_id = str(uuid.uuid4())
+    session_token = secrets.token_urlsafe(32)
+    with get_connection() as connection:
+        execute(
+            connection,
             """
-            INSERT INTO device_events (id, device_id, level, event_type, message, created_at)
-            VALUES (:id, :device_id, :level, :event_type, :message, :created_at)
+            INSERT INTO user_sessions (id, user_id, session_token, created_at, revoked_at)
+            VALUES (?, ?, ?, ?, NULL)
             """,
-            [{**event.model_dump(), "created_at": event.created_at.isoformat()} for event in events],
+            (session_id, user_id, session_token, utc_now()),
+        )
+    return session_token
+
+
+def get_user_by_session_token(session_token: str) -> AuthUser | None:
+    with get_connection() as connection:
+        row = execute(
+            connection,
+            """
+            SELECT u.id, u.name, u.email, u.created_at
+            FROM user_sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.session_token = ? AND s.revoked_at IS NULL
+            """,
+            (session_token,),
+        ).fetchone()
+    if not row:
+        return None
+    return AuthUser(
+        id=row["id"],
+        name=row["name"],
+        email=row["email"],
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def revoke_session(session_token: str) -> None:
+    with get_connection() as connection:
+        execute(
+            connection,
+            "UPDATE user_sessions SET revoked_at = ? WHERE session_token = ? AND revoked_at IS NULL",
+            (utc_now(), session_token),
         )
 
 
 def list_devices() -> list[DeviceStatus]:
     with get_connection() as connection:
-        rows = connection.execute("SELECT * FROM devices ORDER BY name").fetchall()
+        rows = execute(connection, "SELECT * FROM devices ORDER BY name").fetchall()
     return [
         DeviceStatus(
             **{
@@ -294,7 +360,7 @@ def list_devices() -> list[DeviceStatus]:
 
 def get_device(device_id: str) -> DeviceStatus | None:
     with get_connection() as connection:
-        row = connection.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+        row = execute(connection, "SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
     if not row:
         return None
     return DeviceStatus(
@@ -309,13 +375,15 @@ def get_device(device_id: str) -> DeviceStatus | None:
 
 def get_device_config(device_id: str) -> DeviceConfig | None:
     with get_connection() as connection:
-        config_row = connection.execute(
+        config_row = execute(
+            connection,
             "SELECT * FROM device_configs WHERE device_id = ?",
             (device_id,),
         ).fetchone()
         if not config_row:
             return None
-        profile_rows = connection.execute(
+        profile_rows = execute(
+            connection,
             "SELECT * FROM window_profiles WHERE device_id = ? ORDER BY slot",
             (device_id,),
         ).fetchall()
@@ -328,23 +396,26 @@ def get_device_config(device_id: str) -> DeviceConfig | None:
         window_count=config_row["window_count"],
         health_check_interval_sec=config_row["health_check_interval_sec"],
         reconnect_cooldown_sec=config_row["reconnect_cooldown_sec"],
+        automation_rules=parse_automation_rules(config_row.get("automation_rules")),
         profiles=profiles,
     )
 
 
 def update_device_config(device_id: str, config: DeviceConfig) -> None:
     with get_connection() as connection:
-        connection.execute(
+        execute(
+            connection,
             """
             INSERT INTO device_configs
-            (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec, automation_rules)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(device_id) DO UPDATE SET
               exe_path = excluded.exe_path,
               launch_args = excluded.launch_args,
               window_count = excluded.window_count,
               health_check_interval_sec = excluded.health_check_interval_sec,
-              reconnect_cooldown_sec = excluded.reconnect_cooldown_sec
+              reconnect_cooldown_sec = excluded.reconnect_cooldown_sec,
+              automation_rules = excluded.automation_rules
             """,
             (
                 device_id,
@@ -353,21 +424,36 @@ def update_device_config(device_id: str, config: DeviceConfig) -> None:
                 config.window_count,
                 config.health_check_interval_sec,
                 config.reconnect_cooldown_sec,
+                serialize_automation_rules(config.automation_rules),
             ),
         )
-        connection.execute(
+        execute(
+            connection,
             "UPDATE devices SET exe_path = ? WHERE id = ?",
             (config.exe_path, device_id),
         )
-        connection.execute("DELETE FROM window_profiles WHERE device_id = ?", (device_id,))
+        execute(connection, "DELETE FROM window_profiles WHERE device_id = ?", (device_id,))
         if config.profiles:
-            connection.executemany(
+            executemany(
+                connection,
                 """
                 INSERT INTO window_profiles
                 (id, device_id, slot, email, credential_id, post_login_choice, position, last_action)
-                VALUES (:id, :device_id, :slot, :email, :credential_id, :post_login_choice, :position, :last_action)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [profile.model_dump() for profile in config.profiles],
+                [
+                    (
+                        profile.id,
+                        profile.device_id,
+                        profile.slot,
+                        profile.email,
+                        profile.credential_id,
+                        profile.post_login_choice,
+                        profile.position,
+                        profile.last_action,
+                    )
+                    for profile in config.profiles
+                ],
             )
 
 
@@ -386,14 +472,16 @@ def create_device(
     with get_connection() as connection:
         existing = None
         if machine_key:
-            existing = connection.execute(
+            existing = execute(
+                connection,
                 "SELECT id FROM devices WHERE machine_key = ?",
                 (machine_key,),
             ).fetchone()
 
         if existing:
             device_id = existing["id"]
-            connection.execute(
+            execute(
+                connection,
                 """
                 UPDATE devices
                 SET machine_key = ?, name = ?, os_version = ?, exe_path = ?
@@ -401,17 +489,19 @@ def create_device(
                 """,
                 (machine_key, name, os_version, exe_path, device_id),
             )
-            connection.execute(
+            execute(
+                connection,
                 """
                 INSERT INTO device_configs
-                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec, automation_rules)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(device_id) DO UPDATE SET
                   exe_path = excluded.exe_path,
                   launch_args = excluded.launch_args,
                   window_count = excluded.window_count,
                   health_check_interval_sec = excluded.health_check_interval_sec,
-                  reconnect_cooldown_sec = excluded.reconnect_cooldown_sec
+                  reconnect_cooldown_sec = excluded.reconnect_cooldown_sec,
+                  automation_rules = excluded.automation_rules
                 """,
                 (
                     device_id,
@@ -420,12 +510,14 @@ def create_device(
                     window_count,
                     health_check_interval_sec,
                     reconnect_cooldown_sec,
+                    serialize_automation_rules(AutomationRules()),
                 ),
             )
         else:
             safe_name = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "win-device"
             device_id = f"{safe_name[:20]}-{uuid.uuid4().hex[:6]}"
-            connection.execute(
+            execute(
+                connection,
                 """
                 INSERT INTO devices
                 (id, machine_key, name, os_version, online, internet_reachable, last_heartbeat_at, automation_state, last_error, active_windows, exe_path, retries_today)
@@ -446,11 +538,12 @@ def create_device(
                     0,
                 ),
             )
-            connection.execute(
+            execute(
+                connection,
                 """
                 INSERT INTO device_configs
-                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (device_id, exe_path, launch_args, window_count, health_check_interval_sec, reconnect_cooldown_sec, automation_rules)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     device_id,
@@ -459,6 +552,7 @@ def create_device(
                     window_count,
                     health_check_interval_sec,
                     reconnect_cooldown_sec,
+                    serialize_automation_rules(AutomationRules()),
                 ),
             )
 
@@ -473,7 +567,8 @@ def create_device(
 def build_worker_config_payload(api_base_url: str, config: DeviceConfig) -> WorkerConfigPayload:
     machine_key_row = None
     with get_connection() as connection:
-        machine_key_row = connection.execute(
+        machine_key_row = execute(
+            connection,
             "SELECT machine_key FROM devices WHERE id = ?",
             (config.device_id,),
         ).fetchone()
@@ -486,6 +581,8 @@ def build_worker_config_payload(api_base_url: str, config: DeviceConfig) -> Work
         reconnect_cooldown_sec=config.reconnect_cooldown_sec,
         exe_path=config.exe_path,
         launch_args=config.launch_args,
+        automation_rules=config.automation_rules,
+        profiles=config.profiles,
     )
 
 
@@ -499,7 +596,8 @@ def add_event(device_id: str, level: str, event_type: str, message: str) -> Devi
         created_at=datetime.now(timezone.utc),
     )
     with get_connection() as connection:
-        connection.execute(
+        execute(
+            connection,
             """
             INSERT INTO device_events (id, device_id, level, event_type, message, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -518,8 +616,9 @@ def add_event(device_id: str, level: str, event_type: str, message: str) -> Devi
 
 def list_events(limit: int = 50) -> list[DeviceEvent]:
     with get_connection() as connection:
-        rows = connection.execute(
-            "SELECT * FROM device_events ORDER BY datetime(created_at) DESC LIMIT ?",
+        rows = execute(
+            connection,
+            "SELECT * FROM device_events ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
     return [DeviceEvent(**{**row, "created_at": datetime.fromisoformat(row["created_at"])}) for row in rows]
@@ -534,7 +633,8 @@ def update_heartbeat(
     last_error: str | None,
 ) -> None:
     with get_connection() as connection:
-        connection.execute(
+        execute(
+            connection,
             """
             UPDATE devices
             SET online = ?, internet_reachable = ?, automation_state = ?, active_windows = ?, last_error = ?, last_heartbeat_at = ?
@@ -549,4 +649,68 @@ def update_heartbeat(
                 utc_now(),
                 device_id,
             ),
+        )
+
+
+def enqueue_command(device_id: str, command_type: str, payload: dict | None = None) -> WorkerCommand:
+    command = WorkerCommand(
+        id=str(uuid.uuid4()),
+        device_id=device_id,
+        command_type=command_type,
+        payload=payload or {},
+        created_at=datetime.now(timezone.utc),
+    )
+    with get_connection() as connection:
+        execute(
+            connection,
+            """
+            INSERT INTO device_commands (id, device_id, command_type, payload, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                command.id,
+                command.device_id,
+                command.command_type,
+                json.dumps(command.payload),
+                "queued",
+                command.created_at.isoformat(),
+            ),
+        )
+    return command
+
+
+def list_pending_commands(device_id: str, limit: int = 20) -> list[WorkerCommand]:
+    with get_connection() as connection:
+        rows = execute(
+            connection,
+            """
+            SELECT * FROM device_commands
+            WHERE device_id = ? AND status = 'queued'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (device_id, limit),
+        ).fetchall()
+    return [
+        WorkerCommand(
+            id=row["id"],
+            device_id=row["device_id"],
+            command_type=row["command_type"],
+            payload=json.loads(row["payload"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+        )
+        for row in rows
+    ]
+
+
+def acknowledge_command(command_id: str, status: str, note: str | None = None) -> None:
+    with get_connection() as connection:
+        execute(
+            connection,
+            """
+            UPDATE device_commands
+            SET status = ?, note = ?, acknowledged_at = ?
+            WHERE id = ?
+            """,
+            (status, note, utc_now(), command_id),
         )

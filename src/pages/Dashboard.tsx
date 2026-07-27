@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Download, Monitor, RefreshCcw, ShieldCheck, TimerReset } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import type { DeviceRegistrationRequest } from "@shared/types";
+import type { DeviceEvent, DeviceRegistrationRequest, DeviceStatus } from "@shared/types";
 import { DeviceCard } from "@/components/DeviceCard";
 import { LayoutShell } from "@/components/LayoutShell";
 import { SectionCard } from "@/components/SectionCard";
 import { useControlCenterStore } from "@/store/useControlCenterStore";
-import { downloadJson } from "@/utils/download";
 import { formatDate } from "@/utils/format";
 
 const initialRegistrationForm: DeviceRegistrationRequest = {
@@ -47,7 +46,7 @@ export default function Dashboard() {
       },
       {
         label: "Aktif koruma",
-        value: "2FA + Token",
+        value: "Oturum + Token",
         icon: ShieldCheck,
         accent: "from-emerald-400/20 to-transparent text-emerald-100",
       },
@@ -64,19 +63,6 @@ export default function Dashboard() {
   async function handleRegisterDevice() {
     try {
       const deviceId = await registerNewDevice(registrationForm);
-      const workerConfig = useControlCenterStore.getState().workerConfigByDeviceId[deviceId];
-      if (workerConfig) {
-        downloadJson(`worker-config-${deviceId}.json`, {
-          api_base_url: workerConfig.apiBaseUrl,
-          device_id: workerConfig.deviceId,
-          machine_key: workerConfig.machineKey,
-          window_count: workerConfig.windowCount,
-          health_check_interval_sec: workerConfig.healthCheckIntervalSec,
-          reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
-          exe_path: workerConfig.exePath,
-          launch_args: workerConfig.launchArgs,
-        });
-      }
       setRegistrationForm(initialRegistrationForm);
       navigate(`/devices/${deviceId}`);
     } catch {
@@ -97,8 +83,8 @@ export default function Dashboard() {
                 Internet koptugunda bile Windows makinelerdeki 4'lu pencere duzenini ayakta tutan panel.
               </h2>
               <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-300">
-                Buradan yeni cihaz kaydi olusturabilir, worker config indirebilir ve her
-                cihaz icin pencere sayisi ile otomasyon araliklarini yonetebilirsin.
+                Buradan cihazlari gorebilir, komut gonderebilir ve otomasyon ayarlarini yonetebilirsin.
+                Windows kurulum dosyasi indirmek icin Ayarlar ekranindaki kurulum merkezini kullan.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <button
@@ -143,7 +129,42 @@ export default function Dashboard() {
           </div>
         </section>
 
+        <SectionCard eyebrow="Sayfa rehberi" title="Bu ekranda neyi nerede yonetirsin?">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="rounded-[24px] border border-white/8 bg-slate-950/40 p-5">
+              <div className="text-sm font-semibold text-white">Ust kisim</div>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Sistem genel ozetini, kayitli cihaz sayisini ve toplu relogin gibi hizli komutlari gosterir.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-white/8 bg-slate-950/40 p-5">
+              <div className="text-sm font-semibold text-white">Canli cihazlar</div>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Her Windows PC icin online durumu, hata bilgisi ve manuel komut butonlari burada yer alir.
+              </p>
+            </div>
+            <div className="rounded-[24px] border border-white/8 bg-slate-950/40 p-5">
+              <div className="text-sm font-semibold text-white">Worker olaylari</div>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Logout, restart, login denemesi ve benzeri son aksiyonlari tarih sirasiyla burada izlersin.
+              </p>
+            </div>
+          </div>
+        </SectionCard>
+
         <SectionCard eyebrow="Opsiyonel manuel kayit" title="Istersen panelden de Windows worker kaydi olustur">
+          <div className="mb-5 rounded-[24px] border border-amber-500/15 bg-amber-500/[0.06] px-5 py-4 text-sm leading-7 text-slate-200">
+            Bu alan
+            {" "}
+            <span className="font-semibold text-white">Windows kurulum paketi indirmez</span>
+            . Sadece panelde elle cihaz karti acmak icindir. Gercek kurulum icin
+            {" "}
+            <a href="/settings" className="font-semibold text-sky-300 underline decoration-sky-400/40 underline-offset-4">
+              Ayarlar &gt; Windows kurulum merkezi
+            </a>
+            {" "}
+            ekranindaki ZIP paketini indirip BAT dosyasini Windows'ta calistir.
+          </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-slate-200">Cihaz adi</span>
@@ -151,7 +172,7 @@ export default function Dashboard() {
                 value={registrationForm.name}
                 onChange={(event) => setRegistrationForm((state) => ({ ...state, name: event.target.value }))}
                 className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
-                placeholder="Borsa PC 04"
+                placeholder="Ofis PC 01"
               />
             </label>
             <label className="block">
@@ -241,8 +262,16 @@ export default function Dashboard() {
               className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
             >
               <Download className="h-4 w-4" />
-              Kaydet ve worker config indir
+              Sadece cihaz karti olustur
             </button>
+            <a
+              href="/downloads/otologin-windows-worker.zip?v=20260727-2"
+              download
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/5"
+            >
+              <Download className="h-4 w-4" />
+              Windows kurulum paketini indir
+            </a>
             <p className="text-sm leading-7 text-slate-400">
               Normal akista Windows kurulum paketi cihazi otomatik kaydeder. Bu alan ise manuel
               onboarding veya test cihazlari icin yedek yol olarak kalir.
@@ -266,37 +295,50 @@ export default function Dashboard() {
           }
         >
           <div className="grid gap-5 xl:grid-cols-2">
-            {devices.map((device) => (
-              <DeviceCard
-                key={device.id}
-                device={device}
-                onRunCommand={(deviceId, command) => void runCommand(deviceId, command)}
-              />
-            ))}
+            {devices.length > 0 ? (
+                devices.map((device: DeviceStatus) => (
+                <DeviceCard
+                  key={device.id}
+                  device={device}
+                  onRunCommand={(deviceId, command) => void runCommand(deviceId, command)}
+                />
+              ))
+            ) : (
+              <div className="rounded-[28px] border border-dashed border-white/10 bg-slate-950/40 p-8 text-sm leading-7 text-slate-300 xl:col-span-2">
+                Henuz bagli cihaz yok. Once Windows kurulum sihirbazindan paketi indir, hedef PC'de kurulumu
+                tamamla; cihaz otomatik olarak burada gorunecek.
+              </div>
+            )}
           </div>
         </SectionCard>
 
         <SectionCard eyebrow="Worker olaylari" title="Son saglik ve otomasyon olaylari" className="overflow-hidden">
           <div id="olay-akisi" className="space-y-3">
-            {events.map((event) => (
-              <div
-                key={event.id}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/8 bg-slate-950/50 px-4 py-4"
-              >
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="mt-0.5 rounded-2xl border border-white/10 bg-white/[0.04] p-2">
-                    <AlertTriangle className="h-4 w-4 text-sky-200" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-white">{event.message}</div>
-                    <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-                      {event.deviceId} • {event.eventType}
+            {events.length > 0 ? (
+                events.map((event: DeviceEvent) => (
+                <div
+                  key={event.id}
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-white/8 bg-slate-950/50 px-4 py-4"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="mt-0.5 rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+                      <AlertTriangle className="h-4 w-4 text-sky-200" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-white">{event.message}</div>
+                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+                        {event.deviceId} • {event.eventType}
+                      </div>
                     </div>
                   </div>
+                  <div className="text-xs text-slate-400">{formatDate(event.createdAt)}</div>
                 </div>
-                <div className="text-xs text-slate-400">{formatDate(event.createdAt)}</div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/40 px-4 py-6 text-sm text-slate-300">
+                Henuz worker olayi yok. Ilk cihaz kuruldugunda heartbeat ve login olaylari burada akmaya baslayacak.
               </div>
-            ))}
+            )}
           </div>
         </SectionCard>
       </div>

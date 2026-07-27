@@ -1,20 +1,52 @@
 import type { ReactNode } from "react";
-import { Activity, Cable, Command, FileWarning, LockKeyhole, MonitorSmartphone } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { Activity, Cable, Command, FileWarning, LockKeyhole, LogOut, MonitorSmartphone } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useControlCenterStore } from "@/store/useControlCenterStore";
+import { useSessionStore } from "@/store/useSessionStore";
 
 type LayoutShellProps = {
   children: ReactNode;
 };
 
 const navigation = [
-  { to: "/dashboard", label: "Panel", icon: Activity },
-  { to: "/devices/win-floor-01", label: "Cihazlar", icon: MonitorSmartphone },
-  { to: "/logs", label: "Loglar", icon: FileWarning },
-  { to: "/settings", label: "Ayarlar", icon: LockKeyhole },
+  {
+    to: "/dashboard",
+    label: "Panel",
+    description: "Genel ozet, bagli cihazlar ve hizli komutlar burada.",
+    icon: Activity,
+  },
+  {
+    to: "/dashboard",
+    label: "Cihazlar",
+    description: "Kayitli Windows bilgisayarlari ve durumlarini burada gorursun.",
+    icon: MonitorSmartphone,
+  },
+  {
+    to: "/logs",
+    label: "Loglar",
+    description: "Worker olaylari ve kim neyi tetikledi kayitlari burada.",
+    icon: FileWarning,
+  },
+  {
+    to: "/settings",
+    label: "Ayarlar",
+    description: "Kurulum paketi, veritabani notlari ve sistem ayarlari burada.",
+    icon: LockKeyhole,
+  },
 ];
 
 export function LayoutShell({ children }: LayoutShellProps) {
+  const navigate = useNavigate();
+  const currentUser = useSessionStore((state) => state.currentUser);
+  const logout = useSessionStore((state) => state.logout);
+  const deviceCount = useControlCenterStore((state) => state.devices.length);
+
+  async function handleLogout() {
+    await logout();
+    navigate("/login");
+  }
+
   return (
     <div className="min-h-screen bg-[#07111f] text-slate-100">
       <div className="mx-auto flex min-h-screen max-w-[1600px] gap-6 px-6 py-6">
@@ -35,7 +67,7 @@ export function LayoutShell({ children }: LayoutShellProps) {
               const Icon = item.icon;
               return (
                 <NavLink
-                  key={item.to}
+                  key={`${item.to}-${item.label}`}
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
@@ -46,12 +78,41 @@ export function LayoutShell({ children }: LayoutShellProps) {
                     )
                   }
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
+                    {({ isActive }) => (
+                      <>
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="min-w-0">
+                          <div>{item.label}</div>
+                          <div
+                            className={cn(
+                              "mt-1 text-xs leading-5",
+                              isActive ? "text-slate-800/80" : "text-slate-500",
+                            )}
+                          >
+                            {item.description}
+                          </div>
+                        </div>
+                      </>
+                    )}
                 </NavLink>
               );
             })}
           </nav>
+
+          <div className="mt-8 rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Oturum</div>
+            <div className="mt-3 text-sm font-medium text-white">{currentUser?.name ?? "Bilinmeyen kullanici"}</div>
+            <div className="mt-1 text-xs text-slate-400">{currentUser?.email ?? "Oturum yok"}</div>
+            <div className="mt-4 text-xs text-slate-400">Kayitli cihaz: {deviceCount}</div>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-100 transition hover:border-white/20 hover:bg-white/5"
+            >
+              <LogOut className="h-4 w-4" />
+              Cikis yap
+            </button>
+          </div>
 
           <div className="mt-auto rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
             <div className="flex items-center gap-3">

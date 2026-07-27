@@ -6,5 +6,29 @@
   "health_check_interval_sec": 5,
   "reconnect_cooldown_sec": 15,
   "exe_path": "C:\\Program Files\\Uygulama\\app.exe",
-  "launch_args": []
+  "launch_args": [],
+  "automation_rules": {
+    "auto_login_enabled": true,
+    "login_window_keywords": ["login", "giris", "sign in", "e-posta", "sifre"],
+    "success_window_keywords": [],
+    "email_field_hints": ["email", "e-posta", "kullanici"],
+    "password_field_hints": ["sifre", "password"],
+    "submit_button_hints": ["giris", "login", "sign in", "devam"],
+    "relaunch_wait_sec": 4,
+    "post_login_wait_sec": 3,
+    "pre_login_hotkey_enabled": false,
+    "pre_login_hotkey": "",
+    "helper_automation": {
+      "enabled": false,
+      "program_path": "",
+      "launch_args": [],
+      "trigger": "none",
+      "hotkey": "",
+      "click_x": 0,
+      "click_y": 0,
+      "click_button": "left",
+      "wait_after_launch_sec": 2
+    }
+  },
+  "profiles": []
 }

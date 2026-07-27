@@ -23,6 +23,13 @@ function createEmptyProfile(deviceId: string, slot: 1 | 2 | 3 | 4): WindowProfil
   };
 }
 
+function parseKeywordInput(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export default function DeviceDetails() {
   const { deviceId } = useParams();
   const devices = useControlCenterStore((state) => state.devices);
@@ -141,6 +148,39 @@ export default function DeviceDetails() {
       reconnect_cooldown_sec: workerConfig.reconnectCooldownSec,
       exe_path: workerConfig.exePath,
       launch_args: workerConfig.launchArgs,
+      automation_rules: {
+        auto_login_enabled: workerConfig.automationRules.autoLoginEnabled,
+        login_window_keywords: workerConfig.automationRules.loginWindowKeywords,
+        success_window_keywords: workerConfig.automationRules.successWindowKeywords,
+        email_field_hints: workerConfig.automationRules.emailFieldHints,
+        password_field_hints: workerConfig.automationRules.passwordFieldHints,
+        submit_button_hints: workerConfig.automationRules.submitButtonHints,
+        relaunch_wait_sec: workerConfig.automationRules.relaunchWaitSec,
+        post_login_wait_sec: workerConfig.automationRules.postLoginWaitSec,
+        pre_login_hotkey_enabled: workerConfig.automationRules.preLoginHotkeyEnabled,
+        pre_login_hotkey: workerConfig.automationRules.preLoginHotkey,
+        helper_automation: {
+          enabled: workerConfig.automationRules.helperAutomation.enabled,
+          program_path: workerConfig.automationRules.helperAutomation.programPath,
+          launch_args: workerConfig.automationRules.helperAutomation.launchArgs,
+          trigger: workerConfig.automationRules.helperAutomation.trigger,
+          hotkey: workerConfig.automationRules.helperAutomation.hotkey,
+          click_x: workerConfig.automationRules.helperAutomation.clickX,
+          click_y: workerConfig.automationRules.helperAutomation.clickY,
+          click_button: workerConfig.automationRules.helperAutomation.clickButton,
+          wait_after_launch_sec: workerConfig.automationRules.helperAutomation.waitAfterLaunchSec,
+        },
+      },
+      profiles: workerConfig.profiles.map((profile: WindowProfile) => ({
+        id: profile.id,
+        device_id: profile.deviceId,
+        slot: profile.slot,
+        email: profile.email,
+        credential_id: profile.credentialId,
+        post_login_choice: profile.postLoginChoice,
+        position: profile.position,
+        last_action: profile.lastAction,
+      })),
     });
   }
 
@@ -305,9 +345,479 @@ export default function DeviceDetails() {
                 </div>
                 <Waypoints className="h-4 w-4 text-sky-200" />
               </button>
+              <button
+                type="button"
+                onClick={() => void runCommand(deviceId, "run_helper")}
+                className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-left transition hover:bg-white/[0.05]"
+              >
+                <div>
+                  <div className="text-sm font-medium text-white">Yardimci otomasyonu calistir</div>
+                  <div className="mt-1 text-xs text-slate-400">Ek programi acip hotkey veya tiklama adimini dener.</div>
+                </div>
+                <Play className="h-4 w-4 text-sky-200" />
+              </button>
             </div>
           </SectionCard>
         </div>
+
+        <SectionCard eyebrow="Login kurallari" title="Ekran algilama ve otomatik login ayarlari">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Login ekran anahtar kelimeleri</span>
+              <input
+                value={draft.automationRules.loginWindowKeywords.join(", ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            loginWindowKeywords: parseKeywordInput(event.target.value),
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="login, giris, sign in"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Basarili ekran anahtar kelimeleri</span>
+              <input
+                value={draft.automationRules.successWindowKeywords.join(", ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            successWindowKeywords: parseKeywordInput(event.target.value),
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="hesaplarim, dashboard"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Email alan ipuclari</span>
+              <input
+                value={draft.automationRules.emailFieldHints.join(", ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            emailFieldHints: parseKeywordInput(event.target.value),
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Sifre alan ipuclari</span>
+              <input
+                value={draft.automationRules.passwordFieldHints.join(", ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            passwordFieldHints: parseKeywordInput(event.target.value),
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Login buton ipuclari</span>
+              <input
+                value={draft.automationRules.submitButtonHints.join(", ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            submitButtonHints: parseKeywordInput(event.target.value),
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Relaunch bekleme (sn)</span>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={draft.automationRules.relaunchWaitSec}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            relaunchWaitSec: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Login sonrasi bekleme (sn)</span>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={draft.automationRules.postLoginWaitSec}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            postLoginWaitSec: Number(event.target.value) || 1,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-white/8 bg-slate-950/50 px-4 py-4 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={draft.automationRules.autoLoginEnabled}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            autoLoginEnabled: event.target.checked,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="h-4 w-4 rounded border-white/20 bg-slate-900"
+              />
+              <div>
+                <div className="text-sm font-medium text-white">Otomatik login acik</div>
+                <div className="text-xs text-slate-400">
+                  Login ekran anahtar kelimeleri algilanirsa worker pywinauto ile email ve sifre girisi dener.
+                </div>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 rounded-2xl border border-white/8 bg-slate-950/50 px-4 py-4 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={draft.automationRules.preLoginHotkeyEnabled}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            preLoginHotkeyEnabled: event.target.checked,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="h-4 w-4 rounded border-white/20 bg-slate-900"
+              />
+              <div>
+                <div className="text-sm font-medium text-white">Login oncesi hotkey tetikle</div>
+                <div className="text-xs text-slate-400">
+                  Logout olunca once belirledigin kisayol tusuna basilir, sonra login akisi baslar.
+                </div>
+              </div>
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Login oncesi hotkey</span>
+              <input
+                value={draft.automationRules.preLoginHotkey}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            preLoginHotkey: event.target.value,
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="CTRL+ALT+L veya F5"
+              />
+            </label>
+          </div>
+        </SectionCard>
+
+        <SectionCard eyebrow="Ek otomasyon" title="Yardimci program ve tiklama tuslama kurallari">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex items-center gap-3 rounded-2xl border border-white/8 bg-slate-950/50 px-4 py-4 md:col-span-2">
+              <input
+                type="checkbox"
+                checked={draft.automationRules.helperAutomation.enabled}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              enabled: event.target.checked,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="h-4 w-4 rounded border-white/20 bg-slate-900"
+              />
+              <div>
+                <div className="text-sm font-medium text-white">Yardimci otomasyon aktif</div>
+                <div className="text-xs text-slate-400">
+                  Ikinci bir program acilip istersen hotkey, istersen koordinat tiklamasi uygulanir.
+                </div>
+              </div>
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Program yolu</span>
+              <input
+                value={draft.automationRules.helperAutomation.programPath}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              programPath: event.target.value,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="C:\\Program Files\\Helper\\helper.exe"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Program argumanlari</span>
+              <input
+                value={draft.automationRules.helperAutomation.launchArgs.join(" ")}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              launchArgs: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [],
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="--profile market --mode quick"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Tetikleme turu</span>
+              <select
+                value={draft.automationRules.helperAutomation.trigger}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              trigger: event.target.value as "none" | "hotkey" | "click",
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              >
+                <option value="none">Sadece ac</option>
+                <option value="hotkey">Hotkey gonder</option>
+                <option value="click">Koordinata tikla</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Acilis sonrasi bekleme (sn)</span>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={draft.automationRules.helperAutomation.waitAfterLaunchSec}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              waitAfterLaunchSec: Number(event.target.value) || 0,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Yardimci program hotkey</span>
+              <input
+                value={draft.automationRules.helperAutomation.hotkey}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              hotkey: event.target.value,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                placeholder="CTRL+SHIFT+R"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Tiklama X</span>
+              <input
+                type="number"
+                value={draft.automationRules.helperAutomation.clickX}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              clickX: Number(event.target.value) || 0,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-200">Tiklama Y</span>
+              <input
+                type="number"
+                value={draft.automationRules.helperAutomation.clickY}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              clickY: Number(event.target.value) || 0,
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-200">Tiklama dugmesi</span>
+              <select
+                value={draft.automationRules.helperAutomation.clickButton}
+                onChange={(event) =>
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          automationRules: {
+                            ...current.automationRules,
+                            helperAutomation: {
+                              ...current.automationRules.helperAutomation,
+                              clickButton: event.target.value as "left" | "right",
+                            },
+                          },
+                        }
+                      : current,
+                  )
+                }
+                className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+              >
+                <option value="left">Sol tik</option>
+                <option value="right">Sag tik</option>
+              </select>
+            </label>
+          </div>
+        </SectionCard>
 
         <SectionCard eyebrow="Pencere profilleri" title="Login sonrasi secim ve konum kurallari">
           {isLoadingDeviceDetail ? (

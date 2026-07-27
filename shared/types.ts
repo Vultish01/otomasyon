@@ -12,6 +12,21 @@ export type WindowPosition =
   | "bottom_left"
   | "bottom_right";
 
+export type HelperTriggerType = "none" | "hotkey" | "click";
+export type MouseButtonType = "left" | "right";
+
+export type HelperAutomation = {
+  enabled: boolean;
+  programPath: string;
+  launchArgs: string[];
+  trigger: HelperTriggerType;
+  hotkey: string;
+  clickX: number;
+  clickY: number;
+  clickButton: MouseButtonType;
+  waitAfterLaunchSec: number;
+};
+
 export type WindowProfile = {
   id: string;
   deviceId: string;
@@ -21,6 +36,20 @@ export type WindowProfile = {
   postLoginChoice?: string;
   position: WindowPosition;
   lastAction: string;
+};
+
+export type AutomationRules = {
+  autoLoginEnabled: boolean;
+  loginWindowKeywords: string[];
+  successWindowKeywords: string[];
+  emailFieldHints: string[];
+  passwordFieldHints: string[];
+  submitButtonHints: string[];
+  relaunchWaitSec: number;
+  postLoginWaitSec: number;
+  preLoginHotkeyEnabled: boolean;
+  preLoginHotkey: string;
+  helperAutomation: HelperAutomation;
 };
 
 export type DeviceStatus = {
@@ -50,7 +79,8 @@ export type DeviceCommand =
   | "relogin"
   | "restart_all"
   | "reposition"
-  | "start_exe";
+  | "start_exe"
+  | "run_helper";
 
 export type AuditEntry = {
   id: string;
@@ -67,6 +97,7 @@ export type DeviceConfig = {
   windowCount: number;
   healthCheckIntervalSec: number;
   reconnectCooldownSec: number;
+  automationRules: AutomationRules;
   profiles: WindowProfile[];
 };
 
@@ -90,4 +121,18 @@ export type WorkerConfigPayload = {
   reconnectCooldownSec: number;
   exePath: string;
   launchArgs: string[];
+  automationRules: AutomationRules;
+  profiles: WindowProfile[];
+};
+
+export type AuthUser = {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+};
+
+export type AuthResponse = {
+  user: AuthUser;
+  sessionToken: string;
 };

@@ -12,6 +12,54 @@ pencereyi stabil bicimde konumlandirmak icin hazirlanan MVP iskeletidir.
 - `shared/`: Panelde kullanilan ortak tip tanimlari
 - `.trae/documents/`: PRD ve teknik mimari belgeleri
 
+## Veritabani
+
+Backend tarafinda gercek bir veritabani katmani vardir. Varsayilan olarak SQLite kullanir,
+ama `DATABASE_URL` verilirse otomatik olarak Postgres baglantisina gecer.
+
+- veritabani dosyasi: `data/otologin.sqlite3`
+- Postgres env: `DATABASE_URL=postgresql://...`
+- tutulan veriler:
+  - panel kullanicilari
+  - oturum kayitlari
+  - cihazlar
+  - cihaz konfigrasyonlari
+  - window profilleri
+  - worker event loglari
+  - komut kuyrugu
+
+Local SQLite kullanirken farkli bir klasore yazdirmak icin `OTOLOGIN_DATA_DIR`
+ortam degiskenini verebilirsin.
+
+```bash
+OTOLOGIN_DATA_DIR=/absolute/path/to/data .//.venv/bin/uvicorn api.main:app --reload --port 8000
+```
+
+Render ucretsiz web servislerinde yerel dosya sistemi kalici degildir. Bu nedenle
+ucretsiz deploy ortaminda SQLite verisi yeniden deploy veya servis uykuya girince silinebilir.
+Kalici uretim kullanimi icin `Render API + Supabase Postgres` yapisi onerilir.
+
+### SQLite verisini Supabase'e tasima
+
+Once API servisinde `DATABASE_URL` olarak Supabase Postgres baglantini ayarla. Sonra local
+makinede asagidaki komutla mevcut SQLite verisini tasiyabilirsin:
+
+```bash
+DATABASE_URL="postgresql://..." npm run db:migrate:supabase
+```
+
+Farkli bir SQLite dosyasi kullanacaksan:
+
+```bash
+DATABASE_URL="postgresql://..." python3 scripts/migrate_sqlite_to_postgres.py --sqlite-path /absolute/path/to/otologin.sqlite3
+```
+
+Hedef Postgres verisini temizleyip sifirdan yazmak istersen:
+
+```bash
+DATABASE_URL="postgresql://..." python3 scripts/migrate_sqlite_to_postgres.py --truncate
+```
+
 ## Frontend calistirma
 
 ```bash
@@ -91,6 +139,8 @@ Hazir deploy dosyalari:
 3. GitHub reposunu bagla.
 4. Render `render.yaml` dosyasini okuyup frontend ve backend servislerini olustursun.
 5. Frontend URL'si olusunca backend servisindeki `ALLOWED_ORIGINS` degerini o domaine gore guncelle.
+6. Supabase kullaniyorsan API servisinde `DATABASE_URL` ortam degiskenine Postgres baglanti metnini ekle.
+7. Ilk geciste gerekiyorsa local SQLite verisini `npm run db:migrate:supabase` ile Supabase'e tasi.
 
 ### Vercel ile sadece panel yayinlamak
 
@@ -109,8 +159,7 @@ npm run test
 
 ## Sonraki adimlar
 
-1. Frontend store yerine gercek API entegrasyonunu bagla.
-2. Worker tarafina pywinauto + Win32 pencere yonetimini ekle.
+1. Supabase migration ve ilk veri tasima scriptini ekle.
+2. Worker tarafinda gercek Windows EXE ile hotkey ve helper otomasyonunu sahada dogrula.
 3. Credential Manager ile sifreleri cihaz bazli sakla.
-4. Panel girisine gercek kimlik dogrulama ve 2FA ekle.
-```
+4. Panel girisine 2FA ekle.

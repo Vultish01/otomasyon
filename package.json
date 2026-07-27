@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
     "test": "vitest run",
-    "build:worker-package": "./scripts/build_worker_package.sh"
+    "build:worker-package": "./scripts/build_worker_package.sh",
+    "db:migrate:supabase": "python3 ./scripts/migrate_sqlite_to_postgres.py"
   },
   "dependencies": {
     "clsx": "^2.1.1",
