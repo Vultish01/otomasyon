@@ -238,7 +238,7 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
         try:
             process_pending_commands(client, config)
             inspection = inspect_runtime(config)
-            if inspection.internet_reachable and inspection.process_count < config.window_count:
+            if config.automation_rules.auto_login_enabled and inspection.internet_reachable and inspection.process_count < config.window_count:
                 launched = start_missing_processes(config, inspection.process_count)
                 if launched > 0:
                     safe_send_event(
