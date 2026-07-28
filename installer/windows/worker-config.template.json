@@ -28,6 +28,8 @@
       "click_x": 0,
       "click_y": 0,
       "click_button": "left",
+      "click_image_path": "",
+      "click_image_confidence": 0.8,
       "wait_after_launch_sec": 2
     }
   },

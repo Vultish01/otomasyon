@@ -17,7 +17,7 @@ AutomationState = Literal[
 WindowPosition = Literal["top_left", "top_right", "bottom_left", "bottom_right"]
 EventLevel = Literal["info", "warning", "error", "success"]
 CommandType = Literal["relogin", "restart_all", "reposition", "start_exe", "run_helper", "set_credentials"]
-HelperTriggerType = Literal["none", "hotkey", "click"]
+HelperTriggerType = Literal["none", "hotkey", "click", "image"]
 MouseButtonType = Literal["left", "right"]
 
 
@@ -78,6 +78,8 @@ class HelperAutomation(BaseModel):
     click_x: int = 0
     click_y: int = 0
     click_button: MouseButtonType = "left"
+    click_image_path: str = ""
+    click_image_confidence: float = 0.8
     wait_after_launch_sec: int = 2
 
 

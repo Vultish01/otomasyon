@@ -215,6 +215,8 @@ export default function DeviceDetails() {
           click_x: workerConfig.automationRules.helperAutomation.clickX,
           click_y: workerConfig.automationRules.helperAutomation.clickY,
           click_button: workerConfig.automationRules.helperAutomation.clickButton,
+          click_image_path: workerConfig.automationRules.helperAutomation.clickImagePath,
+          click_image_confidence: workerConfig.automationRules.helperAutomation.clickImageConfidence,
           wait_after_launch_sec: workerConfig.automationRules.helperAutomation.waitAfterLaunchSec,
         },
       },
@@ -757,6 +759,7 @@ export default function DeviceDetails() {
                 <option value="none">Sadece ac</option>
                 <option value="hotkey">Hotkey gonder</option>
                 <option value="click">Koordinata tikla</option>
+                <option value="image">Goruntu Analizi ile Tikla</option>
               </select>
             </label>
             <label className="block">
@@ -883,6 +886,62 @@ export default function DeviceDetails() {
                 <option value="right">Sag tik</option>
               </select>
             </label>
+
+            {draft.automationRules.helperAutomation.trigger === "image" && (
+              <>
+                <label className="block md:col-span-2">
+                  <span className="text-sm font-medium text-slate-200">Resim Dosya Yolu (Local PC)</span>
+                  <input
+                    value={draft.automationRules.helperAutomation.clickImagePath}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              automationRules: {
+                                ...current.automationRules,
+                                helperAutomation: {
+                                  ...current.automationRules.helperAutomation,
+                                  clickImagePath: event.target.value,
+                                },
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                    placeholder="C:\\Images\\login_button.png"
+                  />
+                </label>
+                <label className="block md:col-span-2">
+                  <span className="text-sm font-medium text-slate-200">Benzerlik Orani (Confidence: 0.1 - 1.0)</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0.1}
+                    max={1.0}
+                    value={draft.automationRules.helperAutomation.clickImageConfidence}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current
+                          ? {
+                              ...current,
+                              automationRules: {
+                                ...current.automationRules,
+                                helperAutomation: {
+                                  ...current.automationRules.helperAutomation,
+                                  clickImageConfidence: Number(event.target.value) || 0.8,
+                                },
+                              },
+                            }
+                          : current,
+                      )
+                    }
+                    className="mt-2 h-12 w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition focus:border-sky-400/40"
+                  />
+                </label>
+              </>
+            )}
           </div>
         </SectionCard>
 

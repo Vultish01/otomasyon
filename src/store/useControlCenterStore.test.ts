@@ -21,6 +21,8 @@ const automationRules = {
     clickX: 0,
     clickY: 0,
     clickButton: "left" as const,
+    clickImagePath: "",
+    clickImageConfidence: 0.8,
     waitAfterLaunchSec: 2,
   },
 };

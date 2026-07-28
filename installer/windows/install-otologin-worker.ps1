@@ -24,26 +24,6 @@ function Ensure-WingetPackage {
     winget install -e --id $PackageId --accept-package-agreements --accept-source-agreements
 }
 
-function Read-ValueOrDefault {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Prompt,
-        [string]$DefaultValue = ""
-    )
-
-    if ([string]::IsNullOrWhiteSpace($DefaultValue)) {
-        $value = Read-Host $Prompt
-    }
-    else {
-        $value = Read-Host "$Prompt [$DefaultValue]"
-    }
-
-    if ([string]::IsNullOrWhiteSpace($value)) {
-        return $DefaultValue
-    }
-
-    return $value.Trim()
-}
 
 function ConvertTo-StringArray {
     param([object]$Value)
@@ -125,12 +105,11 @@ $apiBaseUrl = "$($config.api_base_url)".TrimEnd("/")
 if ([string]::IsNullOrWhiteSpace($apiBaseUrl)) {
     throw "Kurulum paketinde API adresi yok. Lutfen guncel worker paketini tekrar indirin."
 }
-$exePath = Read-ValueOrDefault -Prompt "Bu bilgisayardaki EXE yolu" -DefaultValue $config.exe_path
-$windowCount = [int](Read-ValueOrDefault -Prompt "Baslangic pencere sayisi" -DefaultValue "$($config.window_count)")
-$healthCheck = [int](Read-ValueOrDefault -Prompt "Kontrol araligi (sn)" -DefaultValue "$($config.health_check_interval_sec)")
-$cooldown = [int](Read-ValueOrDefault -Prompt "Reconnect cooldown (sn)" -DefaultValue "$($config.reconnect_cooldown_sec)")
-$launchArgsInput = Read-ValueOrDefault -Prompt "Launch argumanlari (bos birakilabilir)" -DefaultValue ((ConvertTo-StringArray $config.launch_args) -join " ")
-$launchArgs = if ([string]::IsNullOrWhiteSpace($launchArgsInput)) { @() } else { @($launchArgsInput -split "\s+") }
+$exePath = $config.exe_path
+$windowCount = [int]$config.window_count
+$healthCheck = [int]$config.health_check_interval_sec
+$cooldown = [int]$config.reconnect_cooldown_sec
+$launchArgs = @(ConvertTo-StringArray $config.launch_args)
 
 Write-Host ""
 Write-Host "Cihaz web paneline kaydediliyor..." -ForegroundColor Cyan

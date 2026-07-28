@@ -14,4 +14,4 @@ if errorlevel 1 (
 
 echo Kurulum tamamlandi.
 echo Cihaz kaydi, config olusturma ve ilk baslatma tamamlandi.
-pause
+timeout /t 5

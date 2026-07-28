@@ -12,7 +12,7 @@ export type WindowPosition =
   | "bottom_left"
   | "bottom_right";
 
-export type HelperTriggerType = "none" | "hotkey" | "click";
+export type HelperTriggerType = "none" | "hotkey" | "click" | "image";
 export type MouseButtonType = "left" | "right";
 
 export type HelperAutomation = {
@@ -24,6 +24,8 @@ export type HelperAutomation = {
   clickX: number;
   clickY: number;
   clickButton: MouseButtonType;
+  clickImagePath: string;
+  clickImageConfidence: number;
   waitAfterLaunchSec: number;
 };
 

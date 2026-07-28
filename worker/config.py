@@ -28,6 +28,8 @@ class HelperAutomation:
     click_x: int = 0
     click_y: int = 0
     click_button: str = "left"
+    click_image_path: str = ""
+    click_image_confidence: float = 0.8
     wait_after_launch_sec: int = 2
 
 

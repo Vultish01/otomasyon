@@ -101,6 +101,21 @@ def sync_remote_config(client: ControlCenterClient, config: WorkerConfig, config
 def execute_command(client: ControlCenterClient, config: WorkerConfig, command: dict) -> tuple[str, str | None]:
     command_type = command["command_type"]
 
+    if command_type == "set_credentials":
+        try:
+            import keyring
+            credentials = command.get("payload", {}).get("credentials", [])
+            for cred in credentials:
+                cred_id = cred.get("credential_id")
+                password = cred.get("password")
+                if cred_id and password:
+                    keyring.set_password("otologin", cred_id, password)
+            return ("completed", f"{len(credentials)} adet şifre Windows Credential Manager'a kaydedildi.")
+        except ImportError:
+            return ("failed", "keyring modülü yüklü değil.")
+        except Exception as exc:
+            return ("failed", f"Şifre kaydedilirken hata oluştu: {exc}")
+
     if command_type == "start_exe":
         started = start_missing_processes(config, 0)
         return ("completed", f"{started} surec baslatildi.")
@@ -223,7 +238,7 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
         try:
             process_pending_commands(client, config)
             inspection = inspect_runtime(config)
-            if inspection.internet_reachable and inspection.process_count < config.window_count:
+            if config.automation_rules.auto_login_enabled and inspection.internet_reachable and inspection.process_count < config.window_count:
                 launched = start_missing_processes(config, inspection.process_count)
                 if launched > 0:
                     safe_send_event(

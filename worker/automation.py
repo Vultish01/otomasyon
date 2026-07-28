@@ -45,6 +45,12 @@ except ImportError:  # pragma: no cover
     win32gui = None
     win32process = None
 
+try:
+    import pyautogui
+except ImportError:  # pragma: no cover
+    pyautogui = None
+
+
 
 # #region debug-point B:automation-report
 def _debug_report(hypothesis_id: str, location: str, msg: str, data: Optional[dict] = None) -> None:
@@ -409,6 +415,33 @@ def run_helper_automation(config: WorkerConfig) -> tuple[bool, str | None]:
             return (True, None)
         except Exception as exc:
             return (False, str(exc))
+
+    if helper.trigger == "image":
+        if pyautogui is None:
+            return (False, "pyautogui modulu bulunamadi.")
+        if not helper.click_image_path:
+            return (False, "Resim dosya yolu belirtilmemis.")
+        
+        try:
+            for attempt in range(3):
+                try:
+                    location = pyautogui.locateCenterOnScreen(helper.click_image_path, confidence=helper.click_image_confidence)
+                    if location:
+                        pyautogui.click(location.x, location.y, button=helper.click_button)
+                        return (True, None)
+                except pyautogui.ImageNotFoundException:
+                    pass
+                
+                # Sürüm farklarından dolayı None dönebilir (ImageNotFound fırlatmayabilir)
+                location = pyautogui.locateCenterOnScreen(helper.click_image_path, confidence=helper.click_image_confidence)
+                if location is not None:
+                    pyautogui.click(location.x, location.y, button=helper.click_button)
+                    return (True, None)
+                    
+                time.sleep(1)
+            return (False, f"Belirtilen resim ekranda bulunamadi: {helper.click_image_path}")
+        except Exception as exc:
+            return (False, f"Resim arama sirasinda hata: {exc}")
 
     return (True, None)
 

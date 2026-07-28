@@ -59,11 +59,13 @@ type ApiDeviceConfig = {
       enabled: boolean;
       program_path: string;
       launch_args: string[];
-      trigger: "none" | "hotkey" | "click";
+      trigger: "none" | "hotkey" | "click" | "image";
       hotkey: string;
       click_x: number;
       click_y: number;
       click_button: "left" | "right";
+      click_image_path: string;
+      click_image_confidence: number;
       wait_after_launch_sec: number;
     };
   };
@@ -127,6 +129,8 @@ const defaultAutomationRules: AutomationRules = {
     clickX: 0,
     clickY: 0,
     clickButton: "left",
+    clickImagePath: "",
+    clickImageConfidence: 0.8,
     waitAfterLaunchSec: 2,
   },
 };
@@ -155,6 +159,8 @@ function mapAutomationRules(item?: ApiDeviceConfig["automation_rules"]): Automat
       clickX: item.helper_automation?.click_x ?? 0,
       clickY: item.helper_automation?.click_y ?? 0,
       clickButton: item.helper_automation?.click_button ?? "left",
+      clickImagePath: item.helper_automation?.click_image_path ?? "",
+      clickImageConfidence: item.helper_automation?.click_image_confidence ?? 0.8,
       waitAfterLaunchSec: item.helper_automation?.wait_after_launch_sec ?? 2,
     },
   };
@@ -369,6 +375,8 @@ export async function updateDeviceConfig(config: DeviceConfig) {
           click_x: config.automationRules.helperAutomation.clickX,
           click_y: config.automationRules.helperAutomation.clickY,
           click_button: config.automationRules.helperAutomation.clickButton,
+          click_image_path: config.automationRules.helperAutomation.clickImagePath,
+          click_image_confidence: config.automationRules.helperAutomation.clickImageConfidence,
           wait_after_launch_sec: config.automationRules.helperAutomation.waitAfterLaunchSec,
         },
       },
