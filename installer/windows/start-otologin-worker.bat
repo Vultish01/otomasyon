@@ -17,6 +17,8 @@ if not exist "worker-config.json" (
 )
 
 echo OtoLogin Worker baslatiliyor...
+set "PYTHONPATH=%~dp0"
+set "OTOLOGIN_WORKER_CONFIG=%~dp0worker-config.json"
 call ".venv\Scripts\python.exe" -m worker.runner >> "worker-console.log" 2>&1
 set "EXIT_CODE=%ERRORLEVEL%"
 

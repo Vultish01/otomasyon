@@ -227,6 +227,21 @@ def run_loop(config: WorkerConfig, config_path: str | None = None) -> None:
     client = ControlCenterClient(config.api_base_url)
     logger = configure_worker_logger(config_path)
     logger.info("Worker basladi. device_id=%s api=%s", config.device_id, config.api_base_url)
+
+    if not config.device_id or not config.worker_token:
+        logger.warning("device_id veya worker_token bos. Remote config cekiliyor...")
+        try:
+            config = sync_remote_config(client, config, config_path)
+        except Exception:
+            logger.warning("Remote config cekme denemesi basarisiz.", exc_info=True)
+
+        if not config.device_id or not config.worker_token:
+            logger.error(
+                "device_id veya worker_token bos kaldi. "
+                "worker-config.json dosyasini kontrol edin veya install-otologin-worker.bat ile yeniden kurulum yapin."
+            )
+            raise SystemExit(1)
+
     state = WorkerState.CHECKING
 
     while True:

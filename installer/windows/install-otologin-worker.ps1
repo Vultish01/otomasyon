@@ -157,9 +157,11 @@ $workerConfig = @{
     reconnect_cooldown_sec = $registrationResponse.worker_config.reconnect_cooldown_sec
     exe_path = $registrationResponse.worker_config.exe_path
     launch_args = @(ConvertTo-StringArray $registrationResponse.worker_config.launch_args)
+    automation_rules = $registrationResponse.worker_config.automation_rules
+    profiles = if ($null -ne $registrationResponse.worker_config.profiles) { @($registrationResponse.worker_config.profiles) } else { @() }
 }
 
-$workerConfig | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding UTF8
+$workerConfig | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
 
 $startupBatPath = Join-Path $scriptRoot "start-otologin-worker.bat"
 $startupFolder = [Environment]::GetFolderPath("Startup")
